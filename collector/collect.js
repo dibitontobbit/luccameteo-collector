@@ -1,7 +1,5 @@
 import { createClient } from "@base44/sdk";
 
-// Weather Collector per Lucca Meteo
-
 const STATION_ID = process.env.STATION_ID || "ILUCCA95";
 const WEATHER_API_KEY = process.env.WEATHER_API_KEY;
 const BASE44_APP_ID = process.env.BASE44_APP_ID;
@@ -20,9 +18,9 @@ function windDir(deg) {
   return dirs[Math.round(Number(deg) / 45) % 8];
 }
 
-async function fetchObservation() {
+async function fetchRecentObservations() {
   const url =
-    `https://api.weather.com/v2/pws/observations/current` +
+    `https://api.weather.com/v2/pws/observations/all/1day` +
     `?stationId=${STATION_ID}` +
     `&format=json` +
     `&units=m` +
@@ -35,7 +33,7 @@ async function fetchObservation() {
     let detail = "";
 
     try {
-      detail = (await resp.text()).slice(0, 200);
+      detail = (await resp.text()).slice(0, 300);
     } catch {}
 
     throw new Error(
@@ -44,13 +42,13 @@ async function fetchObservation() {
   }
 
   const json = await resp.json();
-  const obs = json?.observations?.[0];
+  const observations = json?.observations ?? [];
 
-  if (!obs) {
-    throw new Error("Weather API: nessuna osservazione nella risposta");
+  if (!observations.length) {
+    throw new Error("Weather API: nessuna osservazione recente trovata");
   }
 
-  return obs;
+  return observations;
 }
 
 function mapReading(obs) {
@@ -58,15 +56,25 @@ function mapReading(obs) {
 
   return {
     timestamp: obs.obsTimeUtc ?? new Date().toISOString(),
-    temperature: metric.temp ?? null,
-    humidity: obs.humidity ?? null,
-    pressure: metric.pressure ?? null,
-    wind_speed: metric.windSpeed ?? null,
-    wind_direction: windDir(obs.winddir),
+
+    // Valore medio dell'intervallo
+    temperature: metric.tempAvg ?? null,
+    humidity: obs.humidityAvg ?? null,
+    pressure: metric.pressureMax ?? null,
+
+    // Vento medio e direzione media
+    wind_speed: metric.windspeedAvg ?? null,
+    wind_direction: windDir(obs.winddirAvg),
+
+    // Pioggia
     rainfall: metric.precipTotal ?? null,
     rain_rate: metric.precipRate ?? null,
-    wind_gust: metric.windGust ?? null,
-    uv_index: obs.uv ?? null,
+
+    // Picco di raffica dell'intervallo
+    wind_gust: metric.windgustHigh ?? null,
+
+    // UV massimo dell'intervallo
+    uv_index: obs.uvHigh ?? null,
   };
 }
 
@@ -80,9 +88,7 @@ async function main() {
   }
 
   if (!COLLECTOR_EMAIL || !COLLECTOR_PASSWORD) {
-    return fail(
-      "Secret COLLECTOR_EMAIL / COLLECTOR_PASSWORD mancanti"
-    );
+    return fail("Secret COLLECTOR_EMAIL / COLLECTOR_PASSWORD mancanti");
   }
 
   const base44 = createClient({
@@ -95,67 +101,84 @@ async function main() {
       COLLECTOR_PASSWORD
     );
   } catch (e) {
-    return fail(
-      `Errore autenticazione Base44: ${e.message}`
-    );
+    return fail(`Errore autenticazione Base44: ${e.message}`);
   }
 
-  console.log(
-    `✓ Autenticato a Base44 come ${COLLECTOR_EMAIL}`
-  );
+  console.log(`✓ Autenticato a Base44 come ${COLLECTOR_EMAIL}`);
 
-  let obs;
+  let observations;
 
   try {
-    obs = await fetchObservation();
+    observations = await fetchRecentObservations();
 
     console.log(
-      `✓ Osservazione recuperata — obsTimeUtc: ${obs.obsTimeUtc}`
+      `✓ Recuperate ${observations.length} osservazioni delle ultime 24 ore`
     );
   } catch (e) {
     return fail(`Errore API Weather: ${e.message}`);
   }
 
-  const reading = mapReading(obs);
-
-  let recent = [];
+  let existing = [];
 
   try {
-    recent = await base44.entities.WeatherReading.list(
+    existing = await base44.entities.WeatherReading.list(
       "-timestamp",
-      20
+      500
     );
   } catch (e) {
-    return fail(
-      `Errore lettura Base44 (dedupe): ${e.message}`
-    );
+    return fail(`Errore lettura Base44 (dedupe): ${e.message}`);
   }
 
-  const exists = (recent ?? []).some(
-    (r) => r.timestamp === reading.timestamp
+  const existingTimestamps = new Set(
+    (existing ?? [])
+      .map((r) => r.timestamp)
+      .filter(Boolean)
   );
 
-  if (exists) {
-    console.log(
-      `• Lettura già presente (timestamp ${reading.timestamp}) — nessuna nuova creazione.`
+  const missing = observations
+    .map(mapReading)
+    .filter((reading) => !existingTimestamps.has(reading.timestamp))
+    .sort(
+      (a, b) =>
+        new Date(a.timestamp).getTime() -
+        new Date(b.timestamp).getTime()
     );
+
+  if (!missing.length) {
+    console.log("• Nessuna nuova lettura da inserire.");
     return;
   }
 
-  try {
-    await base44.entities.WeatherReading.create(reading);
+  console.log(
+    `• Trovate ${missing.length} letture mancanti da salvare`
+  );
 
-    console.log(
-      `✓ Nuova lettura salvata — timestamp ${reading.timestamp}, ` +
-      `temp ${reading.temperature}°C, umidità ${reading.humidity}%, ` +
-      `pioggia ${reading.rainfall}mm (rate ${reading.rain_rate}mm/h), ` +
-      `vento ${reading.wind_speed}km/h ${reading.wind_direction ?? "—"}.`
-    );
-  } catch (e) {
-    return fail(
-      `Errore Base44 create: ${e.message}`
-    );
+  let saved = 0;
+
+  for (const reading of missing) {
+    try {
+      await base44.entities.WeatherReading.create(reading);
+      saved++;
+
+      console.log(
+        `✓ Salvata ${reading.timestamp} — ` +
+        `${reading.temperature ?? "—"}°C, ` +
+        `UR ${reading.humidity ?? "—"}%, ` +
+        `pioggia ${reading.rainfall ?? "—"} mm, ` +
+        `rate ${reading.rain_rate ?? "—"} mm/h, ` +
+        `vento medio ${reading.wind_speed ?? "—"} km/h, ` +
+        `raffica max ${reading.wind_gust ?? "—"} km/h`
+      );
+    } catch (e) {
+      console.error(
+        `✗ Errore salvataggio ${reading.timestamp}: ${e.message}`
+      );
+    }
   }
+
+  console.log(
+    `✓ Operazione completata: ${saved}/${missing.length} nuove letture salvate`
+  );
 }
 
 main().catch((e) =>
