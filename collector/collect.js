@@ -57,8 +57,11 @@ function mapReading(obs) {
   return {
     timestamp: obs.obsTimeUtc ?? new Date().toISOString(),
 
-    // Valore medio dell'intervallo
+    // Temperatura media e veri estremi dell'intervallo
     temperature: metric.tempAvg ?? null,
+    temperature_high: metric.tempHigh ?? null,
+    temperature_low: metric.tempLow ?? null,
+
     humidity: obs.humidityAvg ?? null,
     pressure: metric.pressureMax ?? null,
 
@@ -162,7 +165,9 @@ async function main() {
 
       console.log(
         `✓ Salvata ${reading.timestamp} — ` +
-        `${reading.temperature ?? "—"}°C, ` +
+        `T media ${reading.temperature ?? "—"}°C, ` +
+        `T max ${reading.temperature_high ?? "—"}°C, ` +
+        `T min ${reading.temperature_low ?? "—"}°C, ` +
         `UR ${reading.humidity ?? "—"}%, ` +
         `pioggia ${reading.rainfall ?? "—"} mm, ` +
         `rate ${reading.rain_rate ?? "—"} mm/h, ` +
