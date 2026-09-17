@@ -78,6 +78,9 @@ function mapReading(obs) {
 
     // UV massimo dell'intervallo
     uv_index: obs.uvHigh ?? null,
+
+    // Radiazione solare massima dell'intervallo, in W/m²
+    solar_radiation: obs.solarRadiationHigh ?? null,
   };
 }
 
@@ -172,7 +175,8 @@ async function main() {
         `pioggia ${reading.rainfall ?? "—"} mm, ` +
         `rate ${reading.rain_rate ?? "—"} mm/h, ` +
         `vento medio ${reading.wind_speed ?? "—"} km/h, ` +
-        `raffica max ${reading.wind_gust ?? "—"} km/h`
+        `raffica max ${reading.wind_gust ?? "—"} km/h, ` +
+        `radiazione solare ${reading.solar_radiation ?? "—"} W/m²`
       );
     } catch (e) {
       console.error(
