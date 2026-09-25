@@ -1,0 +1,27 @@
+{
+  "year": 2026,
+  "unit": "mm",
+  "status": "authoritative_through_2026-08-31",
+  "rainy_day_threshold_mm": 1,
+  "source_priority": [
+    "user_excel_daily_monthly_totals",
+    "ProWeatherLive runs",
+    "Base44 live runs"
+  ],
+  "monthly": {
+    "2026-01": 205.25,
+    "2026-02": 235.96,
+    "2026-03": 88.14,
+    "2026-04": 18.67,
+    "2026-05": 201.62,
+    "2026-06": 47.4,
+    "2026-07": 21.84,
+    "2026-08": 52.07,
+    "2026-09": null,
+    "2026-10": null,
+    "2026-11": null,
+    "2026-12": null
+  },
+  "ytd_through_august_mm": 870.95,
+  "note": "The annual rainfall displayed on the site must not be derived from a limited recent WeatherReading window. Use authoritative daily/monthly totals and sum completed months/days. September remains pending until its backfill and Excel reconciliation are complete."
+}
