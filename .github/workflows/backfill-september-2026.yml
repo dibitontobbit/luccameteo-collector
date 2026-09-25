@@ -1,0 +1,29 @@
+name: Backfill September 2026 Missing Runs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/backfill-september-2026.yml"
+  workflow_dispatch:
+
+jobs:
+  backfill:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        working-directory: collector
+        run: npm install --no-audit --no-fund
+      - name: Fill missing September slots from ProWeatherLive
+        working-directory: collector
+        env:
+          BASE44_APP_ID: ${{ secrets.BASE44_APP_ID }}
+          COLLECTOR_EMAIL: ${{ secrets.COLLECTOR_EMAIL }}
+          COLLECTOR_PASSWORD: ${{ secrets.COLLECTOR_PASSWORD }}
+        run: node backfill-september-2026.js
