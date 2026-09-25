@@ -1,10 +1,11 @@
 import { createClient } from "@base44/sdk";
+import fs from "node:fs";
 
 const BASE44_APP_ID = process.env.BASE44_APP_ID;
 const COLLECTOR_EMAIL = process.env.COLLECTOR_EMAIL;
 const COLLECTOR_PASSWORD = process.env.COLLECTOR_PASSWORD;
 
-const rows = [
+let rows = [
   [
     "2024-08-14",
     33.4,
@@ -258,6 +259,10 @@ const rows = [
     1011.5
   ]
 ];
+
+if (process.env.HISTORY_FILE) {
+  rows = JSON.parse(fs.readFileSync(process.env.HISTORY_FILE, "utf8"));
+}
 
 function localSyntheticTimestamp(date, hourLocal) {
   // Agosto 2024 a Lucca era CEST (UTC+2).
