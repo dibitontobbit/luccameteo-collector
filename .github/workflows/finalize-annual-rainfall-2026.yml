@@ -1,0 +1,37 @@
+name: Finalize 2026 Annual Rainfall After September Backfill
+
+on:
+  workflow_run:
+    workflows:
+      - "Backfill September 2026 Missing Runs"
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "22"
+      - name: Update authoritative 2026 annual rainfall
+        working-directory: collector
+        run: node finalize-annual-rainfall-2026.js
+      - name: Commit updated annual rainfall summary
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add imports/history/annual-rainfall-2026.json
+          if git diff --cached --quiet; then
+            echo "No rainfall summary changes to commit."
+          else
+            git commit -m "Finalize 2026 annual rainfall through Sep 25"
+            git push
+          fi
