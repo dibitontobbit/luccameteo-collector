@@ -1,0 +1,162 @@
+{
+  "2026-09-01": {
+    "tmax": 30.5,
+    "tmin": 18.5,
+    "rain": 0,
+    "rainRate": 0,
+    "humMax": 99,
+    "humMin": 41,
+    "pHigh": 1020.81,
+    "pLow": 1018.43
+  },
+  "2026-09-02": {
+    "tmax": 29.8,
+    "tmin": 15.7,
+    "rain": 0,
+    "rainRate": 0,
+    "humMax": 99,
+    "humMin": 56,
+    "pHigh": 1021.48,
+    "pLow": 1018.77
+  },
+  "2026-09-03": {
+    "tmax": 31.6,
+    "tmin": 16.7,
+    "rain": 0,
+    "rainRate": 0,
+    "humMax": 99,
+    "humMin": 48,
+    "pHigh": 1021.48,
+    "pLow": 1018.77
+  },
+  "2026-09-04": {
+    "tmax": 33.4,
+    "tmin": 18,
+    "rain": 0,
+    "rainRate": 0,
+    "humMax": 97,
+    "humMin": 37,
+    "pHigh": 1021.82,
+    "pLow": 1019.11
+  },
+  "2026-09-05": {
+    "tmax": 30.2,
+    "tmin": 15.4,
+    "rain": 0,
+    "rainRate": 0,
+    "humMax": 99,
+    "humMin": 57,
+    "pHigh": 1021.14,
+    "pLow": 1019.11
+  },
+  "2026-09-06": {
+    "tmax": 35.2,
+    "tmin": 18.9,
+    "rain": 0,
+    "rainRate": 0,
+    "humMax": 99,
+    "humMin": 37,
+    "pHigh": 1023.18,
+    "pLow": 1020.81
+  },
+  "2026-09-07": {
+    "tmax": 32.5,
+    "tmin": 18.6,
+    "rain": 0,
+    "rainRate": 0,
+    "humMax": 99,
+    "humMin": 49,
+    "pHigh": 1023.85,
+    "pLow": 1020.47
+  },
+  "2026-09-08": {
+    "tmax": 30.1,
+    "tmin": 18.9,
+    "rain": 0,
+    "rainRate": 0,
+    "humMax": 99,
+    "humMin": 62,
+    "pHigh": 1021.48,
+    "pLow": 1015.05
+  },
+  "2026-09-09": {
+    "tmax": 27.2,
+    "tmin": 19.5,
+    "rain": 28.96,
+    "rainRate": 59.44,
+    "humMax": 100,
+    "humMin": 69,
+    "pHigh": 1015.73,
+    "pLow": 1010.65
+  },
+  "2026-09-10": {
+    "tmax": 26,
+    "tmin": 19.3,
+    "rain": 15.49,
+    "rainRate": 41.15,
+    "humMax": 100,
+    "humMin": 72,
+    "pHigh": 1015.5,
+    "pLow": 1010.65
+  },
+  "2026-09-11": {
+    "tmax": 26.7,
+    "tmin": 17.1,
+    "rain": 0.76,
+    "rainRate": 4.57,
+    "humMax": 100,
+    "humMin": 56,
+    "pHigh": 1022.16,
+    "pLow": 1014.71
+  },
+  "2026-09-12": {
+    "tmax": 30.1,
+    "tmin": 14.4,
+    "rain": 0,
+    "rainRate": 0,
+    "humMax": 99,
+    "humMin": 43,
+    "pHigh": 1022.84,
+    "pLow": 1020.81
+  },
+  "2026-09-13": {
+    "tmax": 29.7,
+    "tmin": 14.7,
+    "rain": 0,
+    "rainRate": 0,
+    "humMax": 99,
+    "humMin": 29,
+    "pHigh": 1024.87,
+    "pLow": 1021.48
+  },
+  "2026-09-14": {
+    "tmax": 29.9,
+    "tmin": 15.6,
+    "rain": 0,
+    "rainRate": 0,
+    "humMax": 99,
+    "humMin": 49,
+    "pHigh": 1022.84,
+    "pLow": 1020.47
+  },
+  "2026-09-15": {
+    "tmax": 30.7,
+    "tmin": 14.2,
+    "rain": 0,
+    "rainRate": 0,
+    "humMax": 99,
+    "humMin": 31,
+    "pHigh": 1023.18,
+    "pLow": 1018.77
+  },
+  "2026-09-16": {
+    "tmax": 29,
+    "tmin": 14.8,
+    "rain": 0,
+    "rainRate": 0,
+    "humMax": 99,
+    "humMin": 54,
+    "pHigh": 1019.45,
+    "pLow": 1015.39
+  }
+}
