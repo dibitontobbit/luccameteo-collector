@@ -1,6 +1,11 @@
 name: Import January 2025 History
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/import-january-2025.yml"
   workflow_run:
     workflows: ["Import December 2024 History"]
     types:
