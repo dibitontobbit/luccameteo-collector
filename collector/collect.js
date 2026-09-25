@@ -223,6 +223,42 @@ function mapReading(obs) {
   };
 }
 
+
+function checkFreshness(observations) {
+  const usable = observations
+    .map(mapReading)
+    .filter((reading) => reading.temperature != null && reading.timestamp)
+    .sort(
+      (a, b) =>
+        new Date(b.timestamp).getTime() -
+        new Date(a.timestamp).getTime()
+    );
+
+  if (!usable.length) {
+    throw new Error(
+      "WATCHDOG: nessuna lettura meteo valida disponibile nelle ultime 24 ore"
+    );
+  }
+
+  const latest = usable[0];
+  const latestMs = new Date(latest.timestamp).getTime();
+  const ageMinutes = (Date.now() - latestMs) / 60000;
+
+  console.log(
+    `• WATCHDOG: ultima lettura valida ${latest.timestamp}, età ${ageMinutes.toFixed(1)} minuti`
+  );
+
+  if (!Number.isFinite(ageMinutes) || ageMinutes > 30) {
+    console.error(
+      `::error title=LuccaMeteo dati fermi::Ultima lettura valida vecchia di ${ageMinutes.toFixed(1)} minuti (${latest.timestamp})`
+    );
+
+    throw new Error(
+      `WATCHDOG: ultima lettura valida vecchia di ${ageMinutes.toFixed(1)} minuti`
+    );
+  }
+}
+
 async function main() {
   if (!WEATHER_API_KEY) {
     return fail("Secret WEATHER_API_KEY mancante");
@@ -268,8 +304,10 @@ async function main() {
     console.log(
       `✓ Recuperate ${observations.length} osservazioni delle ultime 24 ore`
     );
+
+    checkFreshness(observations);
   } catch (e) {
-    return fail(`Errore API Weather: ${e.message}`);
+    return fail(`Errore API Weather / watchdog: ${e.message}`);
   }
 
   let existing = [];
