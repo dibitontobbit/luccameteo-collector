@@ -231,38 +231,127 @@ function mapReading(obs) {
 
 
 function checkFreshness(observations) {
+  // Il watchdog deve verificare che la stazione stia trasmettendo,
+  // non che uno specifico sensore (es. temperatura) sia disponibile.
   const usable = observations
-    .map(mapReading)
-    .filter((reading) => reading.temperature != null && reading.timestamp)
+    .filter((obs) => obs?.obsTimeUtc)
     .sort(
       (a, b) =>
-        new Date(b.timestamp).getTime() -
-        new Date(a.timestamp).getTime()
+        new Date(b.obsTimeUtc).getTime() -
+        new Date(a.obsTimeUtc).getTime()
     );
 
   if (!usable.length) {
     throw new Error(
-      "WATCHDOG: nessuna lettura meteo valida disponibile nelle ultime 24 ore"
+      "WATCHDOG: nessuna osservazione con timestamp disponibile nelle ultime 24 ore"
     );
   }
 
   const latest = usable[0];
-  const latestMs = new Date(latest.timestamp).getTime();
+  const latestMs = new Date(latest.obsTimeUtc).getTime();
   const ageMinutes = (Date.now() - latestMs) / 60000;
 
   console.log(
-    `• WATCHDOG: ultima lettura valida ${latest.timestamp}, età ${ageMinutes.toFixed(1)} minuti`
+    `• WATCHDOG: ultima trasmissione stazione ${latest.obsTimeUtc}, età ${ageMinutes.toFixed(1)} minuti`
   );
 
   if (!Number.isFinite(ageMinutes) || ageMinutes > 30) {
     console.error(
-      `::error title=LuccaMeteo dati fermi::Ultima lettura valida vecchia di ${ageMinutes.toFixed(1)} minuti (${latest.timestamp})`
+      `::error title=LuccaMeteo dati fermi::Ultima trasmissione vecchia di ${ageMinutes.toFixed(1)} minuti (${latest.obsTimeUtc})`
     );
 
     throw new Error(
-      `WATCHDOG: ultima lettura valida vecchia di ${ageMinutes.toFixed(1)} minuti`
+      `WATCHDOG: ultima trasmissione vecchia di ${ageMinutes.toFixed(1)} minuti`
     );
   }
+}
+
+function auditObservationGaps(observations) {
+  const times = observations
+    .map((obs) => obs?.obsTimeUtc)
+    .filter(Boolean)
+    .map((ts) => new Date(ts).getTime())
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+
+  if (times.length < 2) return;
+
+  let maxGapMinutes = 0;
+  let gapsOver10 = 0;
+
+  for (let i = 1; i < times.length; i++) {
+    const gap = (times[i] - times[i - 1]) / 60000;
+    maxGapMinutes = Math.max(maxGapMinutes, gap);
+    if (gap > 10.5) gapsOver10++;
+  }
+
+  console.log(
+    `• AUDIT 24h: ${times.length} osservazioni, gap massimo ${maxGapMinutes.toFixed(1)} min, gap >10 min: ${gapsOver10}`
+  );
+
+  if (gapsOver10 > 0) {
+    console.warn(
+      `⚠ AUDIT 24h: presenti ${gapsOver10} intervalli superiori a 10 minuti; il collector tenterà comunque il recupero di tutti i timestamp restituiti dalla Weather API.`
+    );
+  }
+}
+
+async function timestampExists(entity, timestamp) {
+  const recent = await withRetry(
+    () => entity.list("-timestamp", 500),
+    `Verifica dedupe ${timestamp}`,
+    {
+      attempts: 3,
+      delays: [2000, 5000],
+      shouldRetry: isBase44Transient,
+    }
+  );
+
+  return (recent ?? []).some((row) => row.timestamp === timestamp);
+}
+
+async function createWithConfirmation(entity, reading) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await entity.create(reading);
+      return { created: true, confirmedExisting: false };
+    } catch (error) {
+      lastError = error;
+      const status = getStatus(error);
+      const ambiguous =
+        status == null ||
+        status === 429 ||
+        status === 403 ||
+        (status >= 500 && status <= 599);
+
+      if (!ambiguous) throw error;
+
+      // Un 5xx o un errore di rete può arrivare dopo che Base44 ha già
+      // accettato la scrittura. Prima di ritentare controlliamo quindi
+      // se il timestamp è comparso, evitando doppioni.
+      try {
+        if (await timestampExists(entity, reading.timestamp)) {
+          return { created: false, confirmedExisting: true };
+        }
+      } catch (verifyError) {
+        console.warn(
+          `⚠ Impossibile verificare ${reading.timestamp} dopo errore di scrittura: ${verifyError.message}`
+        );
+      }
+
+      if (attempt >= 3) throw error;
+
+      const delay = attempt === 1 ? 3000 : 8000;
+      console.warn(
+        `⚠ Salvataggio ${reading.timestamp}: tentativo ${attempt}/3 fallito (${error.message}). Timestamp non trovato, riprovo tra ${delay / 1000}s...`
+      );
+      await sleep(delay);
+    }
+  }
+
+  throw lastError;
 }
 
 async function main() {
@@ -312,6 +401,7 @@ async function main() {
     );
 
     checkFreshness(observations);
+    auditObservationGaps(observations);
   } catch (e) {
     return fail(`Errore API Weather / watchdog: ${e.message}`);
   }
@@ -361,9 +451,13 @@ async function main() {
   );
 
   let saved = 0;
+  let confirmedAfterAmbiguousError = 0;
+  let skippedNoTemperature = 0;
+  let failed = 0;
 
   for (const reading of missing) {
     if (reading.temperature == null) {
+      skippedNoTemperature++;
       console.error(
         `✗ Lettura saltata ${reading.timestamp}: nessun dato temperatura valido (media/max/min); ` +
         `pressione ${reading.pressure ?? "—"} hPa; UR ${reading.humidity ?? "—"}%; ` +
@@ -374,22 +468,13 @@ async function main() {
     }
 
     try {
-      await withRetry(
-        () => base44.entities.WeatherReading.create(reading),
-        `Salvataggio Base44 ${reading.timestamp}`,
-        {
-          attempts: 3,
-          delays: [3000, 8000],
-          // Per gli inserimenti ritentiamo solo 403/429: sono rifiuti espliciti
-          // e non lasciano ambiguità su un possibile inserimento già avvenuto.
-          shouldRetry: (error) => {
-            const status = getStatus(error);
-            return status === 403 || status === 429;
-          },
-        }
+      const result = await createWithConfirmation(
+        base44.entities.WeatherReading,
+        reading
       );
 
-      saved++;
+      if (result.created) saved++;
+      if (result.confirmedExisting) confirmedAfterAmbiguousError++;
 
       console.log(
         `✓ Salvata ${reading.timestamp} — ` +
@@ -404,6 +489,7 @@ async function main() {
         `radiazione solare ${reading.solar_radiation ?? "—"} W/m²`
       );
     } catch (e) {
+      failed++;
       console.error(
         `✗ Errore salvataggio ${reading.timestamp}: ${e.message}`
       );
@@ -411,8 +497,15 @@ async function main() {
   }
 
   console.log(
-    `✓ Operazione completata: ${saved}/${missing.length} nuove letture salvate`
+    `✓ Operazione completata: ${saved} nuove letture salvate, ` +
+    `${confirmedAfterAmbiguousError} già presenti dopo errore ambiguo, ` +
+    `${skippedNoTemperature} saltate per temperatura assente, ` +
+    `${failed} errori definitivi`
   );
+
+  if (failed > 0) {
+    process.exitCode = 1;
+  }
 }
 
 main().catch((e) =>
