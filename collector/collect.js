@@ -148,8 +148,8 @@ async function fetchRecentObservations() {
     fetchRecentObservationsOnce,
     "Weather API",
     {
-      attempts: 3,
-      delays: [2000, 5000],
+      attempts: 5,
+      delays: [2000, 5000, 10000, 20000],
       shouldRetry: isWeatherTransient,
     }
   );
