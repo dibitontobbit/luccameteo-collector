@@ -22,11 +22,9 @@
     "2026-07": 21.9,
     "2026-08": 52
   },
-  "missing_whole_local_days_in_csv": [
-    "2026-08-20"
-  ],
+  "missing_whole_local_days_in_csv": [],
   "partial_days_or_sensor_gaps_exist": true,
-  "note": "Excel remains authoritative. 2026-04-14 was supplied from the user's Excel and restores April to 3 rainy days (>=1.0 mm). 2026-08-20 remains missing from PWL and still needs authoritative data.",
+  "note": "Excel remains authoritative. 2026-04-14 and 2026-08-20 were supplied from the user's Excel. April is 3 rainy days and August is at least 3 rainy days by the >=1.0 mm rule. August is still flagged incomplete because additional daily fields are missing for some dates and will be supplied later.",
   "authoritative_excel_overrides": {
     "2026-04-14": {
       "tmax_c": 20.1,
@@ -41,6 +39,20 @@
       "uv_max": 9,
       "pressure_high_hpa": 1019.64,
       "pressure_low_hpa": 1010.16
+    },
+    "2026-08-20": {
+      "tmax_c": 34.5,
+      "tmin_c": 21,
+      "rainfall_mm": 23.09,
+      "rain_rate_max_mm_h": 22.81,
+      "humidity_high_pct": 99,
+      "humidity_low_pct": 47,
+      "wind_max_ms": null,
+      "gust_max_ms": null,
+      "light_max_lux": null,
+      "uv_max": null,
+      "pressure_high_hpa": 1013.85,
+      "pressure_low_hpa": 1010.84
     }
   },
   "corrected_counts_with_excel": {
@@ -51,7 +63,7 @@
     "2026-05": 8,
     "2026-06": 4,
     "2026-07": 2,
-    "2026-08": 2
+    "2026-08": 3
   },
   "corrected_rainfall_totals_mm_with_excel": {
     "2026-02-05_to_2026-02-28": 171.8,
@@ -60,6 +72,6 @@
     "2026-05": 202.4,
     "2026-06": 42.8,
     "2026-07": 21.9,
-    "2026-08": 52
+    "2026-08": 75.09
   }
 }
