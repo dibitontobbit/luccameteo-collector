@@ -191,12 +191,12 @@ const rows = [
     "2024-08-27",
     35.4,
     17.6,
-    2.2,
-    7.6,
+    18.4,
+    108.45,
     96,
     33,
-    3.1,
-    3.6,
+    16.67,
+    30.56,
     8.7,
     1018.7,
     1011.2
@@ -265,6 +265,61 @@ function localSyntheticTimestamp(date, hourLocal) {
   return `${date}T${utcHour}:00:00.000Z`;
 }
 
+function stormReadingsAug27(tMax, tMin, rain, rainRate, humMax, humMin, windMax, gustMax, uvMax, pHigh, pLow) {
+  // Evento documentato dall'utente: violenta tempesta nel pomeriggio del 27/08/2024.
+  // Tmax mantenuta alle 15:00; alle 17:00 circa la temperatura era ~15°C sopra la minima,
+  // poi in ~10 minuti raggiunge la Tmin.
+  const preStormTemp = Math.round((tMin + 15) * 10) / 10;
+
+  return [
+    {
+      timestamp: localSyntheticTimestamp("2024-08-27", 15),
+      temperature: tMax,
+      temperature_high: tMax,
+      temperature_low: tMax,
+      humidity: humMin,
+      pressure: pLow,
+      wind_speed: 0,
+      wind_direction: null,
+      rainfall: 0,
+      rain_rate: 0,
+      wind_gust: 0,
+      uv_index: uvMax,
+      solar_radiation: null
+    },
+    {
+      timestamp: "2024-08-27T15:00:00.000Z", // 17:00 CEST
+      temperature: preStormTemp,
+      temperature_high: preStormTemp,
+      temperature_low: preStormTemp,
+      humidity: humMax,
+      pressure: pLow,
+      wind_speed: windMax,
+      wind_direction: null,
+      rainfall: 0,
+      rain_rate: rainRate,
+      wind_gust: gustMax,
+      uv_index: 0,
+      solar_radiation: null
+    },
+    {
+      timestamp: "2024-08-27T15:10:00.000Z", // 17:10 CEST
+      temperature: tMin,
+      temperature_high: tMin,
+      temperature_low: tMin,
+      humidity: humMax,
+      pressure: pLow,
+      wind_speed: windMax,
+      wind_direction: null,
+      rainfall: rain,
+      rain_rate: rainRate,
+      wind_gust: gustMax,
+      uv_index: 0,
+      solar_radiation: null
+    }
+  ];
+}
+
 function reading(date, phase, tMax, tMin, rain, rainRate, humMax, humMin, windMax, gustMax, uvMax, pHigh, pLow) {
   const morning = phase === "min";
   return {
@@ -301,6 +356,30 @@ async function main() {
 
   for (const row of rows) {
     const [date, tMax, tMin, rain, rainRate, humMax, humMin, windMax, gustMax, uvMax, pHigh, pLow] = row;
+
+    if (date === "2024-08-27") {
+      const oldMorningTs = localSyntheticTimestamp(date, 6);
+      const oldMorning = byTimestamp.get(oldMorningTs);
+      if (oldMorning) {
+        await entity.delete(oldMorning.id);
+        byTimestamp.delete(oldMorningTs);
+        console.log(`✓ Rimossa vecchia sintetica mattutina ${oldMorningTs}`);
+      }
+
+      for (const payload of stormReadingsAug27(tMax, tMin, rain, rainRate, humMax, humMin, windMax, gustMax, uvMax, pHigh, pLow)) {
+        const old = byTimestamp.get(payload.timestamp);
+        if (old) {
+          await entity.update(old.id, payload);
+          updated++;
+          console.log(`✓ Aggiornato evento tempesta ${payload.timestamp}`);
+        } else {
+          await entity.create(payload);
+          created++;
+          console.log(`✓ Creato evento tempesta ${payload.timestamp}`);
+        }
+      }
+      continue;
+    }
 
     for (const phase of ["min", "max"]) {
       const payload = reading(date, phase, tMax, tMin, rain, rainRate, humMax, humMin, windMax, gustMax, uvMax, pHigh, pLow);
