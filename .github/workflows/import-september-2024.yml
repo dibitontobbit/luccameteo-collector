@@ -1,0 +1,24 @@
+name: Import September 2024 History
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/import-september-2024.yml"]
+jobs:
+  import:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        working-directory: collector
+        run: npm install --no-audit --no-fund
+      - name: Import September 2024
+        working-directory: collector
+        env:
+          BASE44_APP_ID: ${{ secrets.BASE44_APP_ID }}
+          COLLECTOR_EMAIL: ${{ secrets.COLLECTOR_EMAIL }}
+          COLLECTOR_PASSWORD: ${{ secrets.COLLECTOR_PASSWORD }}
+          HISTORY_FILE: ../imports/history/september-2024.json
+        run: node import-august-2024.js
