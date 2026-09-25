@@ -1,0 +1,32 @@
+name: Repair September 2026 Rainfall
+
+on:
+  push:
+    paths:
+      - "collector/repair-september-rainfall-2026.js"
+      - ".github/workflows/repair-september-rainfall-2026.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: luccameteo-rainfall-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        working-directory: collector
+        run: npm install --no-audit --no-fund
+      - name: Repair September rainfall
+        working-directory: collector
+        env:
+          BASE44_APP_ID: ${{ secrets.BASE44_APP_ID }}
+          COLLECTOR_EMAIL: ${{ secrets.COLLECTOR_EMAIL }}
+          COLLECTOR_PASSWORD: ${{ secrets.COLLECTOR_PASSWORD }}
+        run: node repair-september-rainfall-2026.js
