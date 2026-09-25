@@ -23,9 +23,43 @@
     "2026-08": 52
   },
   "missing_whole_local_days_in_csv": [
-    "2026-04-14",
     "2026-08-20"
   ],
   "partial_days_or_sensor_gaps_exist": true,
-  "note": "Excel remains the authoritative source for final daily extrema/totals. This audit verifies internal PWL rainy-day counting only. Missing whole days cannot be certified from PWL alone."
+  "note": "Excel remains authoritative. 2026-04-14 was supplied from the user's Excel and restores April to 3 rainy days (>=1.0 mm). 2026-08-20 remains missing from PWL and still needs authoritative data.",
+  "authoritative_excel_overrides": {
+    "2026-04-14": {
+      "tmax_c": 20.1,
+      "tmin_c": 11.4,
+      "rainfall_mm": 1.27,
+      "rain_rate_max_mm_h": 3,
+      "humidity_high_pct": 99,
+      "humidity_low_pct": 65,
+      "wind_max_ms": 8.2,
+      "gust_max_ms": 9.5,
+      "light_max_lux": 99568,
+      "uv_max": 9,
+      "pressure_high_hpa": 1019.64,
+      "pressure_low_hpa": 1010.16
+    }
+  },
+  "corrected_counts_with_excel": {
+    "2026-02-05_to_2026-02-28": 11,
+    "2026-02_full_month_including_existing_1_to_4": 14,
+    "2026-03": 7,
+    "2026-04": 3,
+    "2026-05": 8,
+    "2026-06": 4,
+    "2026-07": 2,
+    "2026-08": 2
+  },
+  "corrected_rainfall_totals_mm_with_excel": {
+    "2026-02-05_to_2026-02-28": 171.8,
+    "2026-03": 88.8,
+    "2026-04": 11.47,
+    "2026-05": 202.4,
+    "2026-06": 42.8,
+    "2026-07": 21.9,
+    "2026-08": 52
+  }
 }
