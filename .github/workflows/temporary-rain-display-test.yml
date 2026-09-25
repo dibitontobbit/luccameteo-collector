@@ -1,0 +1,32 @@
+name: Temporary Rain Display Test
+
+on:
+  push:
+    paths:
+      - "collector/temporary-rain-display-test.js"
+      - ".github/workflows/temporary-rain-display-test.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: luccameteo-temp-rain-display-test
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        working-directory: collector
+        run: npm install --no-audit --no-fund
+      - name: Apply temporary rainfall display test
+        working-directory: collector
+        env:
+          BASE44_APP_ID: ${{ secrets.BASE44_APP_ID }}
+          COLLECTOR_EMAIL: ${{ secrets.COLLECTOR_EMAIL }}
+          COLLECTOR_PASSWORD: ${{ secrets.COLLECTOR_PASSWORD }}
+        run: node temporary-rain-display-test.js
