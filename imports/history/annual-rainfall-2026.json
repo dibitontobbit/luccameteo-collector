@@ -1,7 +1,7 @@
 {
   "year": 2026,
   "unit": "mm",
-  "status": "authoritative_through_2026-08-31",
+  "status": "authoritative_through_2026-09-25",
   "rainy_day_threshold_mm": 1,
   "source_priority": [
     "user_excel_daily_monthly_totals",
@@ -17,11 +17,12 @@
     "2026-06": 47.4,
     "2026-07": 21.84,
     "2026-08": 52.07,
-    "2026-09": null,
+    "2026-09": 45.21,
     "2026-10": null,
     "2026-11": null,
     "2026-12": null
   },
   "ytd_through_august_mm": 870.95,
-  "note": "The annual rainfall displayed on the site must not be derived from a limited recent WeatherReading window. Use authoritative daily/monthly totals and sum completed months/days. September remains pending until its backfill and Excel reconciliation are complete."
+  "note": "Authoritative rainfall through 2026-09-25. Jan-Aug total 870.95 mm; September 1-25 45.21 mm; YTD 916.16 mm. WeatherReading rainfall is stored as interval increments; monthly/annual totals must be derived from validated daily/monthly totals, not raw cumulative precipTotal.",
+  "ytd_through_2026_09_25_mm": 916.16
 }
