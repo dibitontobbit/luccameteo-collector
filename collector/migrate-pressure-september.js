@@ -39,7 +39,7 @@ async function updateWithRetry(entity, id, data) {
         throw error;
       }
 
-      await sleep(attempt * 1500);
+      await sleep(attempt * 5000);
     }
   }
 
@@ -92,7 +92,7 @@ async function main() {
         console.error(`✗ ${row.timestamp}: ${error.message}`);
       }
 
-      await sleep(40);
+      await sleep(750);
     }
 
     const oldest = rows[rows.length - 1];
