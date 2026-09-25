@@ -155,7 +155,42 @@ async function fetchRecentObservations() {
   );
 }
 
-function mapReading(obs) {
+function deriveRainfallIncrements(observations) {
+  const sorted = [...observations]
+    .filter((obs) => obs?.obsTimeUtc)
+    .sort((a, b) => new Date(a.obsTimeUtc).getTime() - new Date(b.obsTimeUtc).getTime());
+
+  const increments = new Map();
+  let previousTotal = null;
+
+  for (const obs of sorted) {
+    const ts = obs.obsTimeUtc;
+    const total = toFiniteNumber(obs?.metric?.precipTotal);
+    let increment = null;
+
+    if (total != null) {
+      if (previousTotal == null) {
+        // precipTotal della Weather Company è un contatore/cumulato, non una quantità
+        // da sommare a ogni run. Il primo punto della finestra non ha un predecessore
+        // affidabile, quindi non gli attribuiamo pioggia.
+        increment = 0;
+      } else {
+        const delta = total - previousTotal;
+        // Gli aumenti sono nuova pioggia; valori costanti o diminuzioni (reset del
+        // contatore) non devono produrre pioggia artificiale.
+        increment = delta > 0 ? Math.round(delta * 100) / 100 : 0;
+      }
+
+      previousTotal = total;
+    }
+
+    increments.set(ts, increment);
+  }
+
+  return increments;
+}
+
+function mapReading(obs, rainfallIncrement = null) {
   const metric = obs.metric ?? {};
 
   const tempAvg = toFiniteNumber(metric.tempAvg);
@@ -211,8 +246,10 @@ function mapReading(obs) {
         : toFiniteNumber(metric.windspeedAvg) / 3.6,
     wind_direction: windDir(obs.winddirAvg),
 
-    // Pioggia
-    rainfall: metric.precipTotal ?? null,
+    // Pioggia: precipTotal è un cumulato/contatore. Salviamo solo l'incremento
+    // rispetto al run precedente, così la somma dei WeatherReading non moltiplica
+    // lo stesso totale centinaia di volte.
+    rainfall: rainfallIncrement,
     rain_rate: metric.precipRate ?? null,
 
     // Picco di raffica dell'intervallo, convertito da km/h a m/s
@@ -432,8 +469,10 @@ async function main() {
       .filter(Boolean)
   );
 
+  const rainfallIncrements = deriveRainfallIncrements(observations);
+
   const missing = observations
-    .map(mapReading)
+    .map((obs) => mapReading(obs, rainfallIncrements.get(obs.obsTimeUtc) ?? null))
     .filter((reading) => !existingTimestamps.has(reading.timestamp))
     .sort(
       (a, b) =>
