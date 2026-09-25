@@ -11,6 +11,13 @@ function fail(msg) {
   process.exit(1);
 }
 
+function toFiniteNumber(value) {
+  if (value == null || value === "") return null;
+
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
 function windDir(deg) {
   if (deg == null || Number.isNaN(Number(deg))) return null;
 
@@ -54,13 +61,33 @@ async function fetchRecentObservations() {
 function mapReading(obs) {
   const metric = obs.metric ?? {};
 
+  const tempAvg = toFiniteNumber(metric.tempAvg);
+  const tempHigh = toFiniteNumber(metric.tempHigh);
+  const tempLow = toFiniteNumber(metric.tempLow);
+
+  // Base44 richiede un valore numerico per "temperature".
+  // Gli estremi tempHigh/tempLow sono però il dato prioritario da non perdere.
+  // Se tempAvg manca ma gli estremi sono validi, usiamo un valore di appoggio
+  // solo per il campo temperature, lasciando intatti i veri estremi.
+  let temperature = tempAvg;
+
+  if (temperature == null) {
+    if (tempHigh != null && tempLow != null) {
+      temperature = (tempHigh + tempLow) / 2;
+    } else if (tempHigh != null) {
+      temperature = tempHigh;
+    } else if (tempLow != null) {
+      temperature = tempLow;
+    }
+  }
+
   return {
     timestamp: obs.obsTimeUtc ?? new Date().toISOString(),
 
-    // Temperatura media e veri estremi dell'intervallo
-    temperature: metric.tempAvg ?? null,
-    temperature_high: metric.tempHigh ?? null,
-    temperature_low: metric.tempLow ?? null,
+    // Temperatura media (o fallback tecnico) e veri estremi dell'intervallo
+    temperature,
+    temperature_high: tempHigh,
+    temperature_low: tempLow,
 
     humidity: obs.humidityAvg ?? null,
     pressure: metric.pressureMax ?? null,
@@ -162,13 +189,20 @@ async function main() {
   let saved = 0;
 
   for (const reading of missing) {
+    if (reading.temperature == null) {
+      console.error(
+        `✗ Lettura saltata ${reading.timestamp}: nessun dato temperatura valido (media/max/min)`
+      );
+      continue;
+    }
+
     try {
       await base44.entities.WeatherReading.create(reading);
       saved++;
 
       console.log(
         `✓ Salvata ${reading.timestamp} — ` +
-        `T media ${reading.temperature ?? "—"}°C, ` +
+        `T media/fallback ${reading.temperature ?? "—"}°C, ` +
         `T max ${reading.temperature_high ?? "—"}°C, ` +
         `T min ${reading.temperature_low ?? "—"}°C, ` +
         `UR ${reading.humidity ?? "—"}%, ` +
