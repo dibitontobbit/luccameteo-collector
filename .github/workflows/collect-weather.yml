@@ -1,5 +1,9 @@
 name: Weather Collector
 
+concurrency:
+  group: luccameteo-weather-collector
+  cancel-in-progress: false
+
 on:
   schedule:
     - cron: "*/5 * * * *"
@@ -7,6 +11,7 @@ on:
 
 jobs:
   collect:
+    timeout-minutes: 15
     # Pin the production runner so the future ubuntu-latest migration
     # cannot change the OS underneath the collector without us deciding.
     runs-on: ubuntu-24.04
