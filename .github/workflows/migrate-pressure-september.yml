@@ -1,0 +1,31 @@
+name: One-off September Pressure Migration
+
+on:
+  workflow_run:
+    workflows: ["One-off September Wind Migration"]
+    types:
+      - completed
+
+jobs:
+  migrate:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        working-directory: collector
+        run: npm install --no-audit --no-fund
+
+      - name: Correct September pressure by +12 hPa
+        working-directory: collector
+        env:
+          BASE44_APP_ID: ${{ secrets.BASE44_APP_ID }}
+          COLLECTOR_EMAIL: ${{ secrets.COLLECTOR_EMAIL }}
+          COLLECTOR_PASSWORD: ${{ secrets.COLLECTOR_PASSWORD }}
+        run: node migrate-pressure-september.js
