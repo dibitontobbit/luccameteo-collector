@@ -11,6 +11,76 @@ function fail(msg) {
   process.exit(1);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getStatus(error) {
+  const direct =
+    error?.status ??
+    error?.response?.status ??
+    error?.cause?.status ??
+    null;
+
+  if (direct != null) return Number(direct);
+
+  const match = String(error?.message ?? "").match(/\b(403|429|5\d\d)\b/);
+  return match ? Number(match[1]) : null;
+}
+
+function isBase44Transient(error) {
+  const status = getStatus(error);
+  return status === 403 || status === 429 || (status >= 500 && status <= 599);
+}
+
+function isWeatherTransient(error) {
+  const status = getStatus(error);
+  const message = String(error?.message ?? "").toLowerCase();
+
+  return (
+    status === 429 ||
+    (status >= 500 && status <= 599) ||
+    message.includes("unexpected end of json") ||
+    message.includes("invalid json") ||
+    message.includes("fetch failed") ||
+    message.includes("network") ||
+    message.includes("timeout") ||
+    message.includes("econn")
+  );
+}
+
+async function withRetry(
+  fn,
+  label,
+  {
+    attempts = 3,
+    delays = [2000, 5000],
+    shouldRetry = () => true,
+  } = {}
+) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+
+      if (attempt >= attempts || !shouldRetry(error)) {
+        throw error;
+      }
+
+      const delay = delays[Math.min(attempt - 1, delays.length - 1)] ?? 5000;
+      console.warn(
+        `⚠ ${label}: tentativo ${attempt}/${attempts} fallito (${error.message}). Riprovo tra ${delay / 1000}s...`
+      );
+      await sleep(delay);
+    }
+  }
+
+  throw lastError;
+}
+
 function toFiniteNumber(value) {
   if (value == null || value === "") return null;
 
@@ -25,7 +95,7 @@ function windDir(deg) {
   return dirs[Math.round(Number(deg) / 45) % 8];
 }
 
-async function fetchRecentObservations() {
+async function fetchRecentObservationsOnce() {
   const url =
     `https://api.weather.com/v2/pws/observations/all/1day` +
     `?stationId=${STATION_ID}` +
@@ -43,12 +113,26 @@ async function fetchRecentObservations() {
       detail = (await resp.text()).slice(0, 300);
     } catch {}
 
-    throw new Error(
+    const error = new Error(
       `Weather API HTTP ${resp.status} ${resp.statusText} ${detail}`
     );
+    error.status = resp.status;
+    throw error;
   }
 
-  const json = await resp.json();
+  const raw = await resp.text();
+  let json;
+
+  try {
+    json = JSON.parse(raw);
+  } catch (error) {
+    const parseError = new Error(
+      `Weather API invalid JSON: ${error.message}`
+    );
+    parseError.cause = error;
+    throw parseError;
+  }
+
   const observations = json?.observations ?? [];
 
   if (!observations.length) {
@@ -56,6 +140,18 @@ async function fetchRecentObservations() {
   }
 
   return observations;
+}
+
+async function fetchRecentObservations() {
+  return withRetry(
+    fetchRecentObservationsOnce,
+    "Weather API",
+    {
+      attempts: 3,
+      delays: [2000, 5000],
+      shouldRetry: isWeatherTransient,
+    }
+  );
 }
 
 function mapReading(obs) {
@@ -129,9 +225,18 @@ async function main() {
   });
 
   try {
-    await base44.auth.loginViaEmailPassword(
-      COLLECTOR_EMAIL,
-      COLLECTOR_PASSWORD
+    await withRetry(
+      () =>
+        base44.auth.loginViaEmailPassword(
+          COLLECTOR_EMAIL,
+          COLLECTOR_PASSWORD
+        ),
+      "Autenticazione Base44",
+      {
+        attempts: 3,
+        delays: [3000, 8000],
+        shouldRetry: isBase44Transient,
+      }
     );
   } catch (e) {
     return fail(`Errore autenticazione Base44: ${e.message}`);
@@ -154,9 +259,18 @@ async function main() {
   let existing = [];
 
   try {
-    existing = await base44.entities.WeatherReading.list(
-      "-timestamp",
-      500
+    existing = await withRetry(
+      () =>
+        base44.entities.WeatherReading.list(
+          "-timestamp",
+          500
+        ),
+      "Lettura Base44 per dedupe",
+      {
+        attempts: 3,
+        delays: [3000, 8000],
+        shouldRetry: isBase44Transient,
+      }
     );
   } catch (e) {
     return fail(`Errore lettura Base44 (dedupe): ${e.message}`);
@@ -197,7 +311,21 @@ async function main() {
     }
 
     try {
-      await base44.entities.WeatherReading.create(reading);
+      await withRetry(
+        () => base44.entities.WeatherReading.create(reading),
+        `Salvataggio Base44 ${reading.timestamp}`,
+        {
+          attempts: 3,
+          delays: [3000, 8000],
+          // Per gli inserimenti ritentiamo solo 403/429: sono rifiuti espliciti
+          // e non lasciano ambiguità su un possibile inserimento già avvenuto.
+          shouldRetry: (error) => {
+            const status = getStatus(error);
+            return status === 403 || status === 429;
+          },
+        }
+      );
+
       saved++;
 
       console.log(
