@@ -2,7 +2,7 @@ name: One-off September Pressure Migration
 
 on:
   workflow_run:
-    workflows: ["One-off September Wind Migration"]
+    workflows: ["Retry September Wind Migration"]
     types:
       - completed
 
