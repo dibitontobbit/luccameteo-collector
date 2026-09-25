@@ -1,0 +1,27 @@
+name: Import January 2025 History
+
+on:
+  workflow_run:
+    workflows: ["Import December 2024 History"]
+    types:
+      - completed
+
+jobs:
+  import:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        working-directory: collector
+        run: npm install --no-audit --no-fund
+      - name: Import January 2025 synthetic history
+        working-directory: collector
+        env:
+          BASE44_APP_ID: ${{ secrets.BASE44_APP_ID }}
+          COLLECTOR_EMAIL: ${{ secrets.COLLECTOR_EMAIL }}
+          COLLECTOR_PASSWORD: ${{ secrets.COLLECTOR_PASSWORD }}
+        run: node import-january-2025.js
