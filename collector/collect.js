@@ -365,7 +365,10 @@ async function main() {
   for (const reading of missing) {
     if (reading.temperature == null) {
       console.error(
-        `✗ Lettura saltata ${reading.timestamp}: nessun dato temperatura valido (media/max/min)`
+        `✗ Lettura saltata ${reading.timestamp}: nessun dato temperatura valido (media/max/min); ` +
+        `pressione ${reading.pressure ?? "—"} hPa; UR ${reading.humidity ?? "—"}%; ` +
+        `vento ${reading.wind_speed ?? "—"} m/s; raffica ${reading.wind_gust ?? "—"} m/s; ` +
+        `pioggia ${reading.rainfall ?? "—"} mm; rain rate ${reading.rain_rate ?? "—"} mm/h`
       );
       continue;
     }
