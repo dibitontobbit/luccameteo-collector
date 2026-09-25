@@ -101,7 +101,7 @@ async function fetchRecentObservationsOnce() {
     `https://api.weather.com/v2/pws/observations/all/1day` +
     `?stationId=${STATION_ID}` +
     `&format=json` +
-    `&units=h` +
+    `&units=m` +
     `&numericPrecision=decimal` +
     `&apiKey=${WEATHER_API_KEY}`;
 
@@ -156,7 +156,7 @@ async function fetchRecentObservations() {
 }
 
 function mapReading(obs) {
-  const metric = obs.metric_si ?? {};
+  const metric = obs.metric ?? {};
 
   const tempAvg = toFiniteNumber(metric.tempAvg);
   const tempHigh = toFiniteNumber(metric.tempHigh);
@@ -204,16 +204,22 @@ function mapReading(obs) {
       return null;
     })(),
 
-    // Weather Company units=h restituisce direttamente il vento in m/s.
-    wind_speed: metric.windspeedAvg ?? null,
+    // Weather Company units=m restituisce il vento in km/h; normalizziamo in m/s.
+    wind_speed:
+      toFiniteNumber(metric.windspeedAvg) == null
+        ? null
+        : toFiniteNumber(metric.windspeedAvg) / 3.6,
     wind_direction: windDir(obs.winddirAvg),
 
     // Pioggia
     rainfall: metric.precipTotal ?? null,
     rain_rate: metric.precipRate ?? null,
 
-    // Picco di raffica dell'intervallo in m/s
-    wind_gust: metric.windgustHigh ?? null,
+    // Picco di raffica dell'intervallo, convertito da km/h a m/s
+    wind_gust:
+      toFiniteNumber(metric.windgustHigh) == null
+        ? null
+        : toFiniteNumber(metric.windgustHigh) / 3.6,
 
     // UV massimo dell'intervallo
     uv_index: obs.uvHigh ?? null,
