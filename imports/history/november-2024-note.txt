@@ -1,0 +1,1 @@
+November 2024 historical import approved by user. Source: manually curated Excel. Rainy days corrected to 6 using >=1 mm threshold. Import pending execution via existing synthetic-history mechanism.
