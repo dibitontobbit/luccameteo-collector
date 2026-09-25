@@ -5,6 +5,7 @@ const WEATHER_API_KEY = process.env.WEATHER_API_KEY;
 const BASE44_APP_ID = process.env.BASE44_APP_ID;
 const COLLECTOR_EMAIL = process.env.COLLECTOR_EMAIL;
 const COLLECTOR_PASSWORD = process.env.COLLECTOR_PASSWORD;
+const PRESSURE_CORRECTION_HPA = 12;
 
 function fail(msg) {
   console.error("✗ " + msg);
@@ -100,7 +101,7 @@ async function fetchRecentObservationsOnce() {
     `https://api.weather.com/v2/pws/observations/all/1day` +
     `?stationId=${STATION_ID}` +
     `&format=json` +
-    `&units=m` +
+    `&units=h` +
     `&numericPrecision=decimal` +
     `&apiKey=${WEATHER_API_KEY}`;
 
@@ -155,7 +156,7 @@ async function fetchRecentObservations() {
 }
 
 function mapReading(obs) {
-  const metric = obs.metric ?? {};
+  const metric = obs.metric_si ?? {};
 
   const tempAvg = toFiniteNumber(metric.tempAvg);
   const tempHigh = toFiniteNumber(metric.tempHigh);
@@ -186,9 +187,24 @@ function mapReading(obs) {
     temperature_low: tempLow,
 
     humidity: obs.humidityAvg ?? null,
-    pressure: metric.pressureMax ?? null,
 
-    // Vento medio e direzione media
+    // La console/PWL sta trasmettendo la pressione relativa circa 12 hPa troppo bassa.
+    // Per la lettura corrente usiamo il centro dell'intervallo min/max e applichiamo
+    // la correzione di calibrazione, così il valore torna coerente con la pressione locale.
+    pressure: (() => {
+      const pMax = toFiniteNumber(metric.pressureMax);
+      const pMin = toFiniteNumber(metric.pressureMin);
+
+      if (pMax != null && pMin != null) {
+        return ((pMax + pMin) / 2) + PRESSURE_CORRECTION_HPA;
+      }
+
+      if (pMax != null) return pMax + PRESSURE_CORRECTION_HPA;
+      if (pMin != null) return pMin + PRESSURE_CORRECTION_HPA;
+      return null;
+    })(),
+
+    // Weather Company units=h restituisce direttamente il vento in m/s.
     wind_speed: metric.windspeedAvg ?? null,
     wind_direction: windDir(obs.winddirAvg),
 
@@ -196,7 +212,7 @@ function mapReading(obs) {
     rainfall: metric.precipTotal ?? null,
     rain_rate: metric.precipRate ?? null,
 
-    // Picco di raffica dell'intervallo
+    // Picco di raffica dell'intervallo in m/s
     wind_gust: metric.windgustHigh ?? null,
 
     // UV massimo dell'intervallo
@@ -336,8 +352,8 @@ async function main() {
         `UR ${reading.humidity ?? "—"}%, ` +
         `pioggia ${reading.rainfall ?? "—"} mm, ` +
         `rate ${reading.rain_rate ?? "—"} mm/h, ` +
-        `vento medio ${reading.wind_speed ?? "—"} km/h, ` +
-        `raffica max ${reading.wind_gust ?? "—"} km/h, ` +
+        `vento medio ${reading.wind_speed ?? "—"} m/s, ` +
+        `raffica max ${reading.wind_gust ?? "—"} m/s, ` +
         `radiazione solare ${reading.solar_radiation ?? "—"} W/m²`
       );
     } catch (e) {
