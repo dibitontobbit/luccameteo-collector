@@ -243,7 +243,7 @@ function mapReading(obs, rainfallIncrement = null) {
     wind_speed:
       toFiniteNumber(metric.windspeedAvg) == null
         ? null
-        : toFiniteNumber(metric.windspeedAvg) / 3.6,
+        : Math.round((toFiniteNumber(metric.windspeedAvg) / 3.6) * 100) / 100,
     wind_direction: windDir(obs.winddirAvg),
 
     // Pioggia: precipTotal è un cumulato/contatore. Salviamo solo l'incremento
@@ -256,7 +256,7 @@ function mapReading(obs, rainfallIncrement = null) {
     wind_gust:
       toFiniteNumber(metric.windgustHigh) == null
         ? null
-        : toFiniteNumber(metric.windgustHigh) / 3.6,
+        : Math.round((toFiniteNumber(metric.windgustHigh) / 3.6) * 100) / 100,
 
     // UV massimo dell'intervallo
     uv_index: obs.uvHigh ?? null,
