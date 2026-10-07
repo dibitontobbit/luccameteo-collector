@@ -157,7 +157,19 @@ async function fetchRecentObservations() {
 
 function deriveRainfallIncrements(observations) {
   const sorted = [...observations]
-    .filter((obs) => obs?.obsTimeUtc)
+    .filter((obs) => {
+      if (!obs?.obsTimeUtc) return false;
+
+      // Il record verrà scartato più avanti se non esiste alcuna temperatura valida.
+      // Non deve quindi avanzare il contatore della pioggia: in caso contrario
+      // l'incremento caduto durante una lettura incompleta viene perso per sempre.
+      const metric = obs.metric ?? {};
+      return (
+        toFiniteNumber(metric.tempAvg) != null ||
+        toFiniteNumber(metric.tempHigh) != null ||
+        toFiniteNumber(metric.tempLow) != null
+      );
+    })
     .sort((a, b) => new Date(a.obsTimeUtc).getTime() - new Date(b.obsTimeUtc).getTime());
 
   const increments = new Map();
