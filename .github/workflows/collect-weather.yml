@@ -12,6 +12,7 @@ on:
 jobs:
   collect:
     timeout-minutes: 15
+
     # Pin the production runner so the future ubuntu-latest migration
     # cannot change the OS underneath the collector without us deciding.
     runs-on: ubuntu-24.04
@@ -27,7 +28,7 @@ jobs:
         working-directory: collector
         run: npm install --no-audit --no-fund
 
-      - name: Run collector
+      - name: Run weather collector
         working-directory: collector
         env:
           WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
@@ -36,3 +37,12 @@ jobs:
           COLLECTOR_PASSWORD: ${{ secrets.COLLECTOR_PASSWORD }}
           STATION_ID: ${{ secrets.STATION_ID }}
         run: node collect.js
+
+      - name: Run CFR alerts collector
+        working-directory: collector
+        env:
+          BASE44_APP_ID: ${{ secrets.BASE44_APP_ID }}
+          COLLECTOR_EMAIL: ${{ secrets.COLLECTOR_EMAIL }}
+          COLLECTOR_PASSWORD: ${{ secrets.COLLECTOR_PASSWORD }}
+          ALERT_ZONES: S2
+        run: node alerts.js
