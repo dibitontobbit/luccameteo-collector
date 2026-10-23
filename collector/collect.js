@@ -172,6 +172,68 @@ function italyDayKey(timestamp) {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
+function hasUsableTemperature(obs) {
+  const metric = obs?.metric ?? {};
+  return (
+    toFiniteNumber(metric.tempAvg) != null ||
+    toFiniteNumber(metric.tempHigh) != null ||
+    toFiniteNumber(metric.tempLow) != null
+  );
+}
+
+// Preserva il picco reale di rain rate anche quando una o più osservazioni
+// intermedie non hanno temperatura e non possono essere salvate come WeatherReading.
+// Il massimo osservato viene associato alla successiva lettura valida dello stesso
+// giorno locale. Se il giorno termina con sole letture incomplete, il picco viene
+// associato all'ultima lettura valida di quel giorno, senza inventare temperature.
+function deriveRainRatePeaks(observations) {
+  const sorted = [...observations]
+    .filter((obs) => obs?.obsTimeUtc)
+    .sort((a, b) => new Date(a.obsTimeUtc).getTime() - new Date(b.obsTimeUtc).getTime());
+
+  const byDay = new Map();
+
+  for (const obs of sorted) {
+    const day = italyDayKey(obs.obsTimeUtc);
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(obs);
+  }
+
+  const peaks = new Map();
+
+  for (const dayObservations of byDay.values()) {
+    let pendingMax = null;
+    let lastValidTimestamp = null;
+
+    for (const obs of dayObservations) {
+      const rate = toFiniteNumber(obs?.metric?.precipRate);
+      if (rate != null) {
+        pendingMax = pendingMax == null ? rate : Math.max(pendingMax, rate);
+      }
+
+      if (hasUsableTemperature(obs)) {
+        if (pendingMax != null) {
+          peaks.set(obs.obsTimeUtc, pendingMax);
+        }
+        lastValidTimestamp = obs.obsTimeUtc;
+        pendingMax = null;
+      }
+    }
+
+    // Caso limite: il picco arriva dopo l'ultima lettura completa della giornata.
+    // Lo attribuiamo all'ultima lettura valida dello stesso giorno per non perderlo.
+    if (pendingMax != null && lastValidTimestamp) {
+      const current = toFiniteNumber(peaks.get(lastValidTimestamp));
+      peaks.set(
+        lastValidTimestamp,
+        current == null ? pendingMax : Math.max(current, pendingMax)
+      );
+    }
+  }
+
+  return peaks;
+}
+
 function deriveRainfallIncrements(observations) {
   const sorted = [...observations]
     .filter((obs) => {
@@ -180,12 +242,7 @@ function deriveRainfallIncrements(observations) {
       // Il record verrà scartato più avanti se non esiste alcuna temperatura valida.
       // Non deve quindi avanzare il contatore della pioggia: in caso contrario
       // l'incremento caduto durante una lettura incompleta viene perso per sempre.
-      const metric = obs.metric ?? {};
-      return (
-        toFiniteNumber(metric.tempAvg) != null ||
-        toFiniteNumber(metric.tempHigh) != null ||
-        toFiniteNumber(metric.tempLow) != null
-      );
+      return hasUsableTemperature(obs);
     })
     .sort((a, b) => new Date(a.obsTimeUtc).getTime() - new Date(b.obsTimeUtc).getTime());
 
@@ -226,7 +283,7 @@ function deriveRainfallIncrements(observations) {
   return increments;
 }
 
-function mapReading(obs, rainfallIncrement = null) {
+function mapReading(obs, rainfallIncrement = null, rainRatePeak = null) {
   const metric = obs.metric ?? {};
 
   const tempAvg = toFiniteNumber(metric.tempAvg);
@@ -286,7 +343,12 @@ function mapReading(obs, rainfallIncrement = null) {
     // rispetto al run precedente, così la somma dei WeatherReading non moltiplica
     // lo stesso totale centinaia di volte.
     rainfall: rainfallIncrement,
-    rain_rate: metric.precipRate ?? null,
+    // Conserviamo il picco più alto osservato nell'intervallo, includendo eventuali
+    // letture incomplete che non possono essere salvate autonomamente.
+    rain_rate:
+      toFiniteNumber(rainRatePeak) != null
+        ? toFiniteNumber(rainRatePeak)
+        : toFiniteNumber(metric.precipRate),
 
     // Picco di raffica dell'intervallo, convertito da km/h a m/s
     wind_gust:
@@ -506,9 +568,66 @@ async function main() {
   );
 
   const rainfallIncrements = deriveRainfallIncrements(observations);
+  const rainRatePeaks = deriveRainRatePeaks(observations);
 
-  const missing = observations
-    .map((obs) => mapReading(obs, rainfallIncrements.get(obs.obsTimeUtc) ?? null))
+  const mappedReadings = observations
+    .map((obs) =>
+      mapReading(
+        obs,
+        rainfallIncrements.get(obs.obsTimeUtc) ?? null,
+        rainRatePeaks.get(obs.obsTimeUtc) ?? null
+      )
+    );
+
+  // Se il picco di rain rate è emerso da una lettura incompleta successiva,
+  // potremmo dover aggiornare una WeatherReading già salvata. In questo modo
+  // la deduplica per timestamp non può farci perdere il massimo reale giornaliero.
+  const existingByTimestamp = new Map();
+  for (const row of existing ?? []) {
+    if (!row?.timestamp) continue;
+    if (!existingByTimestamp.has(row.timestamp)) {
+      existingByTimestamp.set(row.timestamp, []);
+    }
+    existingByTimestamp.get(row.timestamp).push(row);
+  }
+
+  let rainRatePeaksUpdated = 0;
+
+  for (const reading of mappedReadings) {
+    const peak = toFiniteNumber(reading.rain_rate);
+    if (peak == null) continue;
+
+    const rows = existingByTimestamp.get(reading.timestamp) ?? [];
+    for (const row of rows) {
+      const current = toFiniteNumber(row.rain_rate);
+      const rowId = row.id ?? row._id ?? null;
+
+      if (rowId && (current == null || peak > current)) {
+        try {
+          await withRetry(
+            () => base44.entities.WeatherReading.update(rowId, { rain_rate: peak }),
+            `Aggiornamento rain rate max ${reading.timestamp}`,
+            {
+              attempts: 3,
+              delays: [2000, 5000],
+              shouldRetry: isBase44Transient,
+            }
+          );
+          row.rain_rate = peak;
+          rainRatePeaksUpdated++;
+          console.log(
+            `✓ Rain rate max aggiornato ${reading.timestamp}: ${current ?? "—"} → ${peak} mm/h`
+          );
+        } catch (e) {
+          console.error(
+            `✗ Impossibile aggiornare rain rate max ${reading.timestamp}: ${e.message}`
+          );
+        }
+      }
+    }
+  }
+
+  const missing = mappedReadings
     .filter((reading) => !existingTimestamps.has(reading.timestamp))
     .sort(
       (a, b) =>
@@ -573,6 +692,7 @@ async function main() {
 
   console.log(
     `✓ Operazione completata: ${saved} nuove letture salvate, ` +
+    `${rainRatePeaksUpdated} rain rate max aggiornati, ` +
     `${confirmedAfterAmbiguousError} già presenti dopo errore ambiguo, ` +
     `${skippedNoTemperature} saltate per temperatura assente, ` +
     `${failed} errori definitivi`
