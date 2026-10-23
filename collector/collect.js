@@ -155,6 +155,23 @@ async function fetchRecentObservations() {
   );
 }
 
+function italyDayKey(timestamp) {
+  // precipTotal è un cumulato giornaliero della stazione. Il confine corretto
+  // è quindi il giorno locale di Lucca, inclusi automaticamente CET/CEST.
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Rome",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(timestamp));
+
+  const values = Object.fromEntries(
+    parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value])
+  );
+
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function deriveRainfallIncrements(observations) {
   const sorted = [...observations]
     .filter((obs) => {
@@ -174,26 +191,33 @@ function deriveRainfallIncrements(observations) {
 
   const increments = new Map();
   let previousTotal = null;
+  let previousDay = null;
 
   for (const obs of sorted) {
     const ts = obs.obsTimeUtc;
     const total = toFiniteNumber(obs?.metric?.precipTotal);
+    const currentDay = italyDayKey(ts);
     let increment = null;
 
     if (total != null) {
       if (previousTotal == null) {
-        // precipTotal della Weather Company è un contatore/cumulato, non una quantità
-        // da sommare a ogni run. Il primo punto della finestra non ha un predecessore
-        // affidabile, quindi non gli attribuiamo pioggia.
+        // Il primo punto della finestra non ha un predecessore affidabile.
         increment = 0;
+      } else if (previousDay != null && currentDay !== previousDay) {
+        // precipTotal si azzera a inizio giornata. Se la stazione è rimasta offline
+        // attraversando la mezzanotte, la prima lettura valida può già contenere tutta
+        // la pioggia caduta dal reset: quel cumulato è quindi nuovo incremento e non
+        // deve essere scartato come una semplice diminuzione del contatore.
+        increment = total > 0 ? Math.round(total * 100) / 100 : 0;
       } else {
         const delta = total - previousTotal;
-        // Gli aumenti sono nuova pioggia; valori costanti o diminuzioni (reset del
-        // contatore) non devono produrre pioggia artificiale.
+        // Nello stesso giorno solo gli aumenti rappresentano nuova pioggia.
+        // Valori costanti o diminuzioni anomale non producono pioggia artificiale.
         increment = delta > 0 ? Math.round(delta * 100) / 100 : 0;
       }
 
       previousTotal = total;
+      previousDay = currentDay;
     }
 
     increments.set(ts, increment);
