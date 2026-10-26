@@ -39,6 +39,7 @@ jobs:
         run: node collect.js
 
       - name: Run CFR alerts collector
+        continue-on-error: true
         working-directory: collector
         env:
           BASE44_APP_ID: ${{ secrets.BASE44_APP_ID }}
