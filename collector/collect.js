@@ -535,6 +535,26 @@ async function main() {
       `✓ Recuperate ${observations.length} osservazioni delle ultime 24 ore`
     );
 
+    const latestDiagnostics = [...observations]
+      .filter((obs) => obs?.obsTimeUtc)
+      .sort((a, b) => new Date(b.obsTimeUtc) - new Date(a.obsTimeUtc))
+      .slice(0, 5);
+
+    console.log("• DIAGNOSTICA WEATHER API — ultime 5 osservazioni:");
+    for (const obs of latestDiagnostics) {
+      const metric = obs?.metric ?? {};
+      console.log(JSON.stringify({
+        obsTimeUtc: obs?.obsTimeUtc ?? null,
+        topLevelKeys: Object.keys(obs ?? {}),
+        metricKeys: Object.keys(metric),
+        temp: metric?.temp ?? null,
+        tempAvg: metric?.tempAvg ?? null,
+        tempHigh: metric?.tempHigh ?? null,
+        tempLow: metric?.tempLow ?? null,
+        humidityAvg: obs?.humidityAvg ?? null
+      }));
+    }
+
     checkFreshness(observations);
     auditObservationGaps(observations);
   } catch (e) {
