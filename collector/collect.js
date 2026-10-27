@@ -154,6 +154,84 @@ async function fetchRecentObservations() {
     }
   );
 }
+async function fetchCurrentObservationOnce() {
+  const url =
+    "https://api.weather.com/v2/pws/observations/current" +
+    "?stationId=" + STATION_ID +
+    "&format=json" +
+    "&units=m" +
+    "&numericPrecision=decimal" +
+    "&apiKey=" + WEATHER_API_KEY;
+
+  const resp = await fetch(url);
+
+  if (!resp.ok) {
+    let detail = "";
+    try {
+      detail = (await resp.text()).slice(0, 300);
+    } catch {}
+
+    const error = new Error(
+      "Weather Current API HTTP " + resp.status + " " + resp.statusText + " " + detail
+    );
+    error.status = resp.status;
+    throw error;
+  }
+
+  const raw = await resp.text();
+  let json;
+
+  try {
+    json = JSON.parse(raw);
+  } catch (error) {
+    const parseError = new Error("Weather Current API invalid JSON: " + error.message);
+    parseError.cause = error;
+    throw parseError;
+  }
+
+  const current = json?.observations?.[0] ?? null;
+  if (!current?.obsTimeUtc) {
+    throw new Error("Weather Current API: nessuna osservazione corrente disponibile");
+  }
+
+  return current;
+}
+
+async function fetchCurrentObservation() {
+  return withRetry(
+    fetchCurrentObservationOnce,
+    "Weather Current API",
+    {
+      attempts: 3,
+      delays: [2000, 5000],
+      shouldRetry: isWeatherTransient,
+    }
+  );
+}
+
+function normalizeCurrentObservation(obs) {
+  const metric = obs?.metric ?? {};
+
+  return {
+    ...obs,
+    humidityAvg: obs?.humidity ?? null,
+    solarRadiationHigh: obs?.solarRadiation ?? null,
+    uvHigh: obs?.uv ?? null,
+    winddirAvg: obs?.winddir ?? null,
+    metric: {
+      tempAvg: metric?.temp ?? null,
+      tempHigh: metric?.temp ?? null,
+      tempLow: metric?.temp ?? null,
+      windspeedAvg: metric?.windSpeed ?? null,
+      windgustHigh: metric?.windGust ?? null,
+      pressureMax: metric?.pressure ?? null,
+      pressureMin: metric?.pressure ?? null,
+      precipRate: metric?.precipRate ?? null,
+      precipTotal: metric?.precipTotal ?? null,
+    },
+  };
+}
+
 
 function italyDayKey(timestamp) {
   // precipTotal è un cumulato giornaliero della stazione. Il confine corretto
@@ -553,6 +631,42 @@ async function main() {
         tempLow: metric?.tempLow ?? null,
         humidityAvg: obs?.humidityAvg ?? null
       }));
+    }
+
+    try {
+      const currentRaw = await fetchCurrentObservation();
+      const current = normalizeCurrentObservation(currentRaw);
+
+      const latestValidHistorical = [...observations]
+        .filter((obs) => obs?.obsTimeUtc && hasUsableTemperature(obs))
+        .sort((a, b) => new Date(b.obsTimeUtc).getTime() - new Date(a.obsTimeUtc).getTime())[0] ?? null;
+
+      const currentTs = new Date(current.obsTimeUtc).getTime();
+      const historicalTs = latestValidHistorical
+        ? new Date(latestValidHistorical.obsTimeUtc).getTime()
+        : -Infinity;
+
+      console.log(
+        "• CURRENT API: " + current.obsTimeUtc +
+        ", temperatura " + (current.metric?.tempAvg ?? "—") + "°C, UR " +
+        (current.humidityAvg ?? "—") + "%"
+      );
+
+      if (
+        hasUsableTemperature(current) &&
+        Number.isFinite(currentTs) &&
+        currentTs > historicalTs &&
+        !observations.some((obs) => obs?.obsTimeUtc === current.obsTimeUtc)
+      ) {
+        observations.push(current);
+        console.log("✓ Fallback CURRENT utilizzato: " + current.obsTimeUtc);
+      } else if (!hasUsableTemperature(current)) {
+        console.warn("⚠ CURRENT API: osservazione corrente senza temperatura valida");
+      } else {
+        console.log("• CURRENT API: nessun fallback necessario");
+      }
+    } catch (currentError) {
+      console.warn("⚠ CURRENT API non disponibile: " + currentError.message);
     }
 
     checkFreshness(observations);
