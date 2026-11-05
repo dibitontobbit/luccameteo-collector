@@ -6,6 +6,7 @@ const BASE44_APP_ID = process.env.BASE44_APP_ID;
 const COLLECTOR_EMAIL = process.env.COLLECTOR_EMAIL;
 const COLLECTOR_PASSWORD = process.env.COLLECTOR_PASSWORD;
 const PRESSURE_CORRECTION_HPA = 10;
+const TEMPERATURE_CORRECTION_C = 1;
 
 function fail(msg) {
   console.error("✗ " + msg);
@@ -364,9 +365,16 @@ function deriveRainfallIncrements(observations) {
 function mapReading(obs, rainfallIncrement = null, rainRatePeak = null) {
   const metric = obs.metric ?? {};
 
-  const tempAvg = toFiniteNumber(metric.tempAvg);
-  const tempHigh = toFiniteNumber(metric.tempHigh);
-  const tempLow = toFiniteNumber(metric.tempLow);
+  const tempAvgRaw = toFiniteNumber(metric.tempAvg);
+  const tempHighRaw = toFiniteNumber(metric.tempHigh);
+  const tempLowRaw = toFiniteNumber(metric.tempLow);
+
+  const tempAvg =
+    tempAvgRaw == null ? null : tempAvgRaw + TEMPERATURE_CORRECTION_C;
+  const tempHigh =
+    tempHighRaw == null ? null : tempHighRaw + TEMPERATURE_CORRECTION_C;
+  const tempLow =
+    tempLowRaw == null ? null : tempLowRaw + TEMPERATURE_CORRECTION_C;
 
   // Base44 richiede un valore numerico per "temperature".
   // Gli estremi tempHigh/tempLow sono però il dato prioritario da non perdere.
@@ -394,7 +402,7 @@ function mapReading(obs, rainfallIncrement = null, rainRatePeak = null) {
 
     humidity: obs.humidityAvg ?? null,
 
-    // La console/PWL sta trasmettendo la pressione relativa circa 12 hPa troppo bassa.
+    // La console/PWL sta trasmettendo la pressione relativa circa 10 hPa troppo bassa.
     // Per la lettura corrente usiamo il centro dell'intervallo min/max e applichiamo
     // la correzione di calibrazione, così il valore torna coerente con la pressione locale.
     pressure: (() => {
