@@ -394,7 +394,8 @@ function mapReading(obs, rainfallIncrement = null, rainRatePeak = null) {
 
     humidity: (() => {
       const humidity = toFiniteNumber(obs.humidityAvg);
-      return humidity == null ? null : Math.min(100, humidity + 1);
+      if (humidity == null) return null;
+      return humidity >= 90 ? Math.min(100, humidity + 1) : humidity;
     })(),
 
     // La console/PWL sta trasmettendo la pressione relativa circa 10 hPa troppo bassa.
