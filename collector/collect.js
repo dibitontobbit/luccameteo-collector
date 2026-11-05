@@ -5,7 +5,7 @@ const WEATHER_API_KEY = process.env.WEATHER_API_KEY;
 const BASE44_APP_ID = process.env.BASE44_APP_ID;
 const COLLECTOR_EMAIL = process.env.COLLECTOR_EMAIL;
 const COLLECTOR_PASSWORD = process.env.COLLECTOR_PASSWORD;
-const PRESSURE_CORRECTION_HPA = 12;
+const PRESSURE_CORRECTION_HPA = 10;
 
 function fail(msg) {
   console.error("✗ " + msg);
