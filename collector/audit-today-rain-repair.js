@@ -59,10 +59,15 @@ async function main(){
       mismatches.push({id:r.id,timestamp:r.timestamp,current,expected:exp});
     }
   }
+  const positives=today.filter(r=>(n(r.rainfall)??0)>0).map(r=>({
+    id:r.id,timestamp:r.timestamp,rainfall:n(r.rainfall),
+    apiExpected:expected.has(r.timestamp)?(expected.get(r.timestamp)??0):null
+  })).sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
   console.log("TODAY_RAIN_REPAIR_AUDIT="+JSON.stringify({
     currentSum:Math.round(currentSum*100)/100,
     expectedSum:Math.round(expectedSum*100)/100,
-    mismatches
+    mismatches,
+    positives
   }));
 }
 main().catch(e=>{console.error(e);process.exit(1);});
