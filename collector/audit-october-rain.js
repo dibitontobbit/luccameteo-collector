@@ -39,7 +39,7 @@ async function main() {
 
   const base44 = createClient({appId:BASE44_APP_ID});
   await base44.auth.loginViaEmailPassword(COLLECTOR_EMAIL,COLLECTOR_PASSWORD);
-  const rows = await base44.entities.WeatherReading.list("-timestamp",15000);
+  const rows = await base44.entities.WeatherReading.list("-timestamp",15000);\n  console.log("WEATHERREADING_RANGE=" + JSON.stringify({count:(rows??[]).length,newest:rows?.[0]?.timestamp??null,oldest:rows?.[(rows?.length??1)-1]?.timestamp??null}));
   const saved = new Map();
   for(const row of rows??[]){
     if(!row?.timestamp) continue;
