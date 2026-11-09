@@ -325,8 +325,8 @@ function deriveRainfallIncrements(observations) {
     .sort((a, b) => new Date(a.obsTimeUtc).getTime() - new Date(b.obsTimeUtc).getTime());
 
   const increments = new Map();
-  let previousTotal = null;
-  let previousDay = null;
+  let day = null;
+  let maxTotalSeen = null;
 
   for (const obs of sorted) {
     const ts = obs.obsTimeUtc;
@@ -335,24 +335,32 @@ function deriveRainfallIncrements(observations) {
     let increment = null;
 
     if (total != null) {
-      if (previousTotal == null) {
+      if (day == null) {
         // Il primo punto della finestra non ha un predecessore affidabile.
+        day = currentDay;
+        maxTotalSeen = total;
         increment = 0;
-      } else if (previousDay != null && currentDay !== previousDay) {
-        // precipTotal si azzera a inizio giornata. Se la stazione è rimasta offline
-        // attraversando la mezzanotte, la prima lettura valida può già contenere tutta
-        // la pioggia caduta dal reset: quel cumulato è quindi nuovo incremento e non
-        // deve essere scartato come una semplice diminuzione del contatore.
+      } else if (currentDay !== day) {
+        // Nuovo giorno locale: precipTotal riparte da zero. Se la prima lettura
+        // valida arriva dopo un periodo offline, il cumulato già presente appartiene
+        // interamente al nuovo giorno e va conservato.
+        day = currentDay;
+        maxTotalSeen = total;
         increment = total > 0 ? Math.round(total * 100) / 100 : 0;
+      } else if (maxTotalSeen == null) {
+        maxTotalSeen = total;
+        increment = 0;
+      } else if (total > maxTotalSeen) {
+        // Conta nuova pioggia solo quando il cumulato supera il massimo già visto
+        // nella giornata. Un calo anomalo e il successivo ritorno allo stesso valore
+        // non possono quindi essere conteggiati una seconda volta.
+        increment = Math.round((total - maxTotalSeen) * 100) / 100;
+        maxTotalSeen = total;
       } else {
-        const delta = total - previousTotal;
-        // Nello stesso giorno solo gli aumenti rappresentano nuova pioggia.
-        // Valori costanti o diminuzioni anomale non producono pioggia artificiale.
-        increment = delta > 0 ? Math.round(delta * 100) / 100 : 0;
+        // Valore uguale o inferiore al massimo giornaliero: nessuna nuova pioggia.
+        // Importante: non abbassiamo maxTotalSeen in caso di reset/drop temporaneo.
+        increment = 0;
       }
-
-      previousTotal = total;
-      previousDay = currentDay;
     }
 
     increments.set(ts, increment);
