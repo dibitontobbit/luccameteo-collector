@@ -713,6 +713,34 @@ async function main() {
       .filter(Boolean)
   );
 
+  // TEMP AUDIT: riepilogo pioggia novembre 2026 da Base44.
+  try {
+    const novemberRows = await base44.entities.WeatherReading.list("-timestamp", 5000);
+    const dailyRain = new Map();
+
+    for (const row of novemberRows ?? []) {
+      if (!row?.timestamp) continue;
+      const day = italyDayKey(row.timestamp);
+      if (day < "2026-11-01" || day > "2026-11-30") continue;
+
+      const rain = toFiniteNumber(row.rainfall);
+      if (rain == null || rain <= 0) continue;
+
+      dailyRain.set(day, (dailyRain.get(day) ?? 0) + rain);
+    }
+
+    const auditRows = [...dailyRain.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([day, total]) => ({
+        day,
+        total: Math.round(total * 100) / 100,
+      }));
+
+    console.log("• AUDIT PIOGGIA NOVEMBRE 2026:", JSON.stringify(auditRows));
+  } catch (auditError) {
+    console.warn("⚠ Audit pioggia novembre non disponibile: " + auditError.message);
+  }
+
   const rainfallIncrements = deriveRainfallIncrements(observations);
   const rainRatePeaks = deriveRainRatePeaks(observations);
 
