@@ -1,0 +1,25 @@
+name: Temporary Apply November Rain Corrections
+
+on:
+  push:
+    paths:
+      - "collector/apply-november-rain-corrections.js"
+      - ".github/workflows/apply-november-rain-corrections.yml"
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "22"
+      - working-directory: collector
+        run: npm install
+      - name: Apply corrections
+        env:
+          BASE44_APP_ID: ${{ secrets.BASE44_APP_ID }}
+          COLLECTOR_EMAIL: ${{ secrets.COLLECTOR_EMAIL }}
+          COLLECTOR_PASSWORD: ${{ secrets.COLLECTOR_PASSWORD }}
+        run: node collector/apply-november-rain-corrections.js
