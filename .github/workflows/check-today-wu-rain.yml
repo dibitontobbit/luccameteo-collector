@@ -16,4 +16,7 @@ jobs:
         env:
           STATION_ID: ${{ secrets.STATION_ID }}
           WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
+          BASE44_APP_ID: ${{ secrets.BASE44_APP_ID }}
+          COLLECTOR_EMAIL: ${{ secrets.COLLECTOR_EMAIL }}
+          COLLECTOR_PASSWORD: ${{ secrets.COLLECTOR_PASSWORD }}
         run: node collector/check-today-wu-rain.js
