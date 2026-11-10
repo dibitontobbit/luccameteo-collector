@@ -312,71 +312,83 @@ function deriveRainRatePeaks(observations) {
   return peaks;
 }
 
-function deriveRainfallIncrements(observations) {
-  const sorted = [...observations]
-    .filter((obs) => {
-      if (!obs?.obsTimeUtc) return false;
-
-      // Il record verrà scartato più avanti se non esiste alcuna temperatura valida.
-      // Non deve quindi avanzare il contatore della pioggia: in caso contrario
-      // l'incremento caduto durante una lettura incompleta viene perso per sempre.
-      return hasUsableTemperature(obs);
-    })
+function deriveRainfallPlan(observations) {
+  // La pioggia è deliberatamente separata dal resto del collector.
+  // Fonte unica: storico Weather Company/WU. CURRENT non partecipa mai.
+  const historical = [...observations]
+    .filter((obs) => obs?.obsTimeUtc && !obs.__collectorCurrentFallback)
     .sort((a, b) => new Date(a.obsTimeUtc).getTime() - new Date(b.obsTimeUtc).getTime());
 
   const increments = new Map();
-  let day = null;
-  let maxTotalSeen = null;
 
-  for (const obs of sorted) {
-    const ts = obs.obsTimeUtc;
-    const total = toFiniteNumber(obs?.metric?.precipTotal);
-    const currentDay = italyDayKey(ts);
-    let increment = null;
-
-    // CURRENT è un fallback a bassa latenza e può precedere lo storico WU di
-    // diversi minuti. Se il suo precipTotal venisse trasformato in incremento,
-    // lo stesso salto verrebbe ricalcolato a ogni run finché lo storico non
-    // recupera, duplicando la pioggia. Lo usiamo quindi per gli altri sensori
-    // ma la pioggia viene contabilizzata solo dalle osservazioni storiche.
-    if (obs.__collectorCurrentFallback) {
-      increments.set(ts, 0);
-      continue;
-    }
-
-    if (total != null) {
-      if (day == null) {
-        // Il primo punto della finestra non ha un predecessore affidabile.
-        day = currentDay;
-        maxTotalSeen = total;
-        increment = 0;
-      } else if (currentDay !== day) {
-        // Nuovo giorno locale: precipTotal riparte da zero. Se la prima lettura
-        // valida arriva dopo un periodo offline, il cumulato già presente appartiene
-        // interamente al nuovo giorno e va conservato.
-        day = currentDay;
-        maxTotalSeen = total;
-        increment = total > 0 ? Math.round(total * 100) / 100 : 0;
-      } else if (maxTotalSeen == null) {
-        maxTotalSeen = total;
-        increment = 0;
-      } else if (total > maxTotalSeen) {
-        // Conta nuova pioggia solo quando il cumulato supera il massimo già visto
-        // nella giornata. Un calo anomalo e il successivo ritorno allo stesso valore
-        // non possono quindi essere conteggiati una seconda volta.
-        increment = Math.round((total - maxTotalSeen) * 100) / 100;
-        maxTotalSeen = total;
-      } else {
-        // Valore uguale o inferiore al massimo giornaliero: nessuna nuova pioggia.
-        // Importante: non abbassiamo maxTotalSeen in caso di reset/drop temporaneo.
-        increment = 0;
-      }
-    }
-
-    increments.set(ts, increment);
+  if (!historical.length) {
+    return {
+      increments,
+      targetDay: null,
+      sourceMaxTotal: 0,
+      allocatedTotal: 0,
+    };
   }
 
-  return increments;
+  // Il collector riconcilia sempre e soltanto il giorno locale più recente.
+  // L'endpoint 1day contiene l'intera giornata corrente da mezzanotte.
+  const targetDay = italyDayKey(historical[historical.length - 1].obsTimeUtc);
+  const today = historical.filter((obs) => italyDayKey(obs.obsTimeUtc) === targetDay);
+
+  let maxTotalSeen = 0;
+  let pendingRain = 0;
+  let lastValidTimestamp = null;
+
+  for (const obs of today) {
+    const ts = obs.obsTimeUtc;
+    const total = toFiniteNumber(obs?.metric?.precipTotal);
+
+    if (total != null && total > maxTotalSeen) {
+      const delta = Math.round((total - maxTotalSeen) * 100) / 100;
+      if (delta > 0) pendingRain += delta;
+      maxTotalSeen = total;
+    }
+
+    // Un calo/reset temporaneo non abbassa MAI il massimo giornaliero.
+    // La pioggia eventualmente maturata durante letture senza temperatura
+    // viene assegnata alla successiva WeatherReading salvabile.
+    if (hasUsableTemperature(obs)) {
+      increments.set(ts, Math.round(pendingRain * 100) / 100);
+      pendingRain = 0;
+      lastValidTimestamp = ts;
+    }
+  }
+
+  // Se la giornata termina con osservazioni incomplete, non perdiamo pioggia:
+  // la associamo all'ultima lettura valida dello stesso giorno.
+  if (pendingRain > 0 && lastValidTimestamp) {
+    const current = toFiniteNumber(increments.get(lastValidTimestamp)) ?? 0;
+    increments.set(
+      lastValidTimestamp,
+      Math.round((current + pendingRain) * 100) / 100
+    );
+    pendingRain = 0;
+  }
+
+  const allocatedTotal = Math.round(
+    [...increments.values()].reduce((sum, value) => sum + (toFiniteNumber(value) ?? 0), 0) * 100
+  ) / 100;
+
+  const sourceMaxTotal = Math.round(maxTotalSeen * 100) / 100;
+
+  // Invariante fondamentale: il collector non deve mai creare né perdere pioggia.
+  if (lastValidTimestamp && Math.abs(allocatedTotal - sourceMaxTotal) > 0.02) {
+    throw new Error(
+      `RAIN INVARIANT FAILED ${targetDay}: source max ${sourceMaxTotal} mm, allocated ${allocatedTotal} mm`
+    );
+  }
+
+  return {
+    increments,
+    targetDay,
+    sourceMaxTotal,
+    allocatedTotal,
+  };
 }
 
 function mapReading(obs, rainfallIncrement = null, rainRatePeak = null) {
@@ -724,8 +736,13 @@ async function main() {
       .filter(Boolean)
   );
 
-  const rainfallIncrements = deriveRainfallIncrements(observations);
+  const rainfallPlan = deriveRainfallPlan(observations);
+  const rainfallIncrements = rainfallPlan.increments;
   const rainRatePeaks = deriveRainRatePeaks(observations);
+
+  console.log(
+    `• RAIN AUDIT ${rainfallPlan.targetDay ?? "—"}: sorgente ${rainfallPlan.sourceMaxTotal} mm, allocati ${rainfallPlan.allocatedTotal} mm`
+  );
 
   const mappedReadings = observations
     .map((obs) =>
@@ -751,39 +768,43 @@ async function main() {
   let rainRatePeaksUpdated = 0;
   let rainfallIncrementsUpdated = 0;
 
-  // Una lettura salvata in precedenza tramite CURRENT può avere rainfall=0.
-  // Quando la stessa osservazione entra nello storico WU, aggiorniamo soltanto
-  // verso l'alto l'incremento confermato, senza creare duplicati.
-  for (const reading of mappedReadings) {
-    const expectedRain = toFiniteNumber(reading.rainfall);
-    if (expectedRain == null || expectedRain <= 0) continue;
+  // Riconciliazione idempotente della giornata corrente:
+  // ogni run ricalcola da zero il valore corretto e riallinea Base44 sia verso
+  // l'alto sia verso il basso. Le righe create da CURRENT restano a 0 finché
+  // non vengono eventualmente confermate dallo storico.
+  if (rainfallPlan.targetDay) {
+    for (const row of existing ?? []) {
+      if (!row?.timestamp || italyDayKey(row.timestamp) !== rainfallPlan.targetDay) continue;
 
-    const rows = existingByTimestamp.get(reading.timestamp) ?? [];
-    for (const row of rows) {
-      const currentRain = toFiniteNumber(row.rainfall) ?? 0;
       const rowId = row.id ?? row._id ?? null;
+      if (!rowId) continue;
 
-      if (rowId && expectedRain > currentRain + 0.001) {
-        try {
-          await withRetry(
-            () => base44.entities.WeatherReading.update(rowId, { rainfall: expectedRain }),
-            `Aggiornamento pioggia storica ${reading.timestamp}`,
-            {
-              attempts: 3,
-              delays: [2000, 5000],
-              shouldRetry: isBase44Transient,
-            }
-          );
-          row.rainfall = expectedRain;
-          rainfallIncrementsUpdated++;
-          console.log(
-            `✓ Pioggia storica aggiornata ${reading.timestamp}: ${currentRain} → ${expectedRain} mm`
-          );
-        } catch (e) {
-          console.error(
-            `✗ Impossibile aggiornare pioggia storica ${reading.timestamp}: ${e.message}`
-          );
-        }
+      const desiredRain = toFiniteNumber(rainfallIncrements.get(row.timestamp)) ?? 0;
+      const currentRain = toFiniteNumber(row.rainfall) ?? 0;
+
+      if (Math.abs(currentRain - desiredRain) <= 0.001) continue;
+
+      try {
+        await withRetry(
+          () => base44.entities.WeatherReading.update(rowId, { rainfall: desiredRain }),
+          `Riconciliazione pioggia ${row.timestamp}`,
+          {
+            attempts: 3,
+            delays: [2000, 5000],
+            shouldRetry: isBase44Transient,
+          }
+        );
+
+        row.rainfall = desiredRain;
+        rainfallIncrementsUpdated++;
+
+        console.log(
+          `✓ Pioggia riconciliata ${row.timestamp}: ${currentRain} → ${desiredRain} mm`
+        );
+      } catch (e) {
+        throw new Error(
+          `Riconciliazione pioggia fallita ${row.timestamp}: ${e.message}`
+        );
       }
     }
   }
