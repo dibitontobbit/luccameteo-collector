@@ -334,6 +334,16 @@ function deriveRainfallIncrements(observations) {
     const currentDay = italyDayKey(ts);
     let increment = null;
 
+    // CURRENT è un fallback a bassa latenza e può precedere lo storico WU di
+    // diversi minuti. Se il suo precipTotal venisse trasformato in incremento,
+    // lo stesso salto verrebbe ricalcolato a ogni run finché lo storico non
+    // recupera, duplicando la pioggia. Lo usiamo quindi per gli altri sensori
+    // ma la pioggia viene contabilizzata solo dalle osservazioni storiche.
+    if (obs.__collectorCurrentFallback) {
+      increments.set(ts, 0);
+      continue;
+    }
+
     if (total != null) {
       if (day == null) {
         // Il primo punto della finestra non ha un predecessore affidabile.
@@ -670,6 +680,7 @@ async function main() {
         currentTs > historicalTs &&
         !observations.some((obs) => obs?.obsTimeUtc === current.obsTimeUtc)
       ) {
+        current.__collectorCurrentFallback = true;
         observations.push(current);
         console.log("✓ Fallback CURRENT utilizzato: " + current.obsTimeUtc);
       } else if (!hasUsableTemperature(current)) {
@@ -738,6 +749,44 @@ async function main() {
   }
 
   let rainRatePeaksUpdated = 0;
+  let rainfallIncrementsUpdated = 0;
+
+  // Una lettura salvata in precedenza tramite CURRENT può avere rainfall=0.
+  // Quando la stessa osservazione entra nello storico WU, aggiorniamo soltanto
+  // verso l'alto l'incremento confermato, senza creare duplicati.
+  for (const reading of mappedReadings) {
+    const expectedRain = toFiniteNumber(reading.rainfall);
+    if (expectedRain == null || expectedRain <= 0) continue;
+
+    const rows = existingByTimestamp.get(reading.timestamp) ?? [];
+    for (const row of rows) {
+      const currentRain = toFiniteNumber(row.rainfall) ?? 0;
+      const rowId = row.id ?? row._id ?? null;
+
+      if (rowId && expectedRain > currentRain + 0.001) {
+        try {
+          await withRetry(
+            () => base44.entities.WeatherReading.update(rowId, { rainfall: expectedRain }),
+            `Aggiornamento pioggia storica ${reading.timestamp}`,
+            {
+              attempts: 3,
+              delays: [2000, 5000],
+              shouldRetry: isBase44Transient,
+            }
+          );
+          row.rainfall = expectedRain;
+          rainfallIncrementsUpdated++;
+          console.log(
+            `✓ Pioggia storica aggiornata ${reading.timestamp}: ${currentRain} → ${expectedRain} mm`
+          );
+        } catch (e) {
+          console.error(
+            `✗ Impossibile aggiornare pioggia storica ${reading.timestamp}: ${e.message}`
+          );
+        }
+      }
+    }
+  }
 
   for (const reading of mappedReadings) {
     const peak = toFiniteNumber(reading.rain_rate);
@@ -839,6 +888,7 @@ async function main() {
   console.log(
     `✓ Operazione completata: ${saved} nuove letture salvate, ` +
     `${rainRatePeaksUpdated} rain rate max aggiornati, ` +
+    `${rainfallIncrementsUpdated} incrementi pioggia storica aggiornati, ` +
     `${confirmedAfterAmbiguousError} già presenti dopo errore ambiguo, ` +
     `${skippedNoTemperature} saltate per temperatura assente, ` +
     `${failed} errori definitivi`
