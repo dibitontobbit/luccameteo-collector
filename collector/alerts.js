@@ -528,22 +528,17 @@ async function main() {
     );
   }
 
-  const existing =
+  const existingResponse =
     await base44.entities.CfrAlert.filter(
       {
         emission_key: parsed.emissionKey,
       },
       {
-        limit: 1,
+        limit: 200,
       }
     );
 
-  if ((existing.items ?? existing ?? []).length > 0) {
-    console.log(
-      `• Emissione già presente (${parsed.emissionKey}) — nessuna duplicazione.`
-    );
-    return;
-  }
+  const existing = existingResponse.items ?? existingResponse ?? [];
 
   const { meta, alerts } = buildRecords(
     parsed,
@@ -551,7 +546,31 @@ async function main() {
     new Date().toISOString()
   );
 
-  const toCreate = [meta, ...alerts];
+  // Una stessa emissione può essere già stata salvata in modo parziale
+  // (per esempio se il CFR usa una formulazione temporale non ancora gestita).
+  // Non usiamo quindi più "emissione presente = stop": inseriamo solo i record
+  // mancanti, così un fix del parser può riparare l'emissione corrente senza
+  // duplicare ciò che è già in Base44.
+  const recordKey = (r) =>
+    [
+      r.kind || "",
+      r.zone_code || "",
+      r.risk_label || "",
+      r.level || "",
+      r.valid_from || "",
+      r.valid_to || "",
+    ].join("|");
+
+  const existingKeys = new Set(existing.map(recordKey));
+  const desired = [meta, ...alerts];
+  const toCreate = desired.filter((r) => !existingKeys.has(recordKey(r)));
+
+  if (toCreate.length === 0) {
+    console.log(
+      `• Emissione già completa (${parsed.emissionKey}) — nessun record mancante.`
+    );
+    return;
+  }
 
   try {
     await base44.entities.CfrAlert.bulkCreate(
@@ -559,7 +578,7 @@ async function main() {
     );
 
     console.log(
-      `✓ Salvati ${toCreate.length} record (1 meta + ${alerts.length} scenari zone: ${ZONES.join(
+      `✓ Salvati ${toCreate.length} record mancanti su ${desired.length} attesi (zone: ${ZONES.join(
         ", "
       )}).`
     );
