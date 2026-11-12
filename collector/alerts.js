@@ -262,32 +262,65 @@ export function parseBulletin(html) {
     // "dalle ore 17.00 di Venerdì, 23 Ottobre 2026
     //  alle ore 23.59 di Venerdì, 23 Ottobre 2026"
 
-    const tm = stripTags(tds[2]).match(
+    const timeText = stripTags(tds[2]);
+
+    // Formato ordinario:
+    // "dalle ore 17.00 di ... alle ore 23.59 di ..."
+    const tm = timeText.match(
       /dalle ore (\d{1,2})[.,](\d{2})\s*di\s*(?:[A-Za-zÀ-ù]+,\s*)?(\d{1,2})\s*([A-Za-zÀ-ù]+)\s*(\d{4})\s*alle ore (\d{1,2})[.,](\d{2})\s*di\s*(?:[A-Za-zÀ-ù]+,\s*)?(\d{1,2})\s*([A-Za-zÀ-ù]+)\s*(\d{4})/i
     );
 
-    if (!tm) continue;
+    let from;
+    let to;
 
-    const mFrom = MONTHS_IT[tm[4].toLowerCase()];
-    const mTo = MONTHS_IT[tm[9].toLowerCase()];
+    if (tm) {
+      const mFrom = MONTHS_IT[tm[4].toLowerCase()];
+      const mTo = MONTHS_IT[tm[9].toLowerCase()];
 
-    if (!mFrom || !mTo) continue;
+      if (!mFrom || !mTo) continue;
 
-    const from = rome(
-      Number(tm[5]),
-      mFrom,
-      Number(tm[3]),
-      Number(tm[1]),
-      Number(tm[2])
-    );
+      from = rome(
+        Number(tm[5]),
+        mFrom,
+        Number(tm[3]),
+        Number(tm[1]),
+        Number(tm[2])
+      );
 
-    const to = rome(
-      Number(tm[10]),
-      mTo,
-      Number(tm[8]),
-      Number(tm[6]),
-      Number(tm[7])
-    );
+      to = rome(
+        Number(tm[10]),
+        mTo,
+        Number(tm[8]),
+        Number(tm[6]),
+        Number(tm[7])
+      );
+    } else {
+      // Il CFR usa anche "in corso fino alle ore ...".
+      // In quel caso l'inizio reale è precedente ma non è espresso nella riga:
+      // per rappresentare correttamente un'allerta già attiva, la facciamo
+      // decorrere dall'istante di emissione del bollettino.
+      const ongoing = timeText.match(
+        /in corso fino\s*alle ore (\d{1,2})[.,](\d{2})\s*di\s*(?:[A-Za-zÀ-ù]+,\s*)?(\d{1,2})\s*([A-Za-zÀ-ù]+)\s*(\d{4})/i
+      );
+
+      if (!ongoing) continue;
+
+      const mTo = MONTHS_IT[ongoing[4].toLowerCase()];
+      if (!mTo) continue;
+
+      from = {
+        iso: emission.iso,
+        ts: emission.ts,
+      };
+
+      to = rome(
+        Number(ongoing[5]),
+        mTo,
+        Number(ongoing[3]),
+        Number(ongoing[1]),
+        Number(ongoing[2])
+      );
+    }
 
     rows.push({
       zoneTokens,
